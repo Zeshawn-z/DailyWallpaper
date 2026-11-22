@@ -69,6 +69,12 @@ internal static class Palette
         ApplyTheme();
     }
 
+    public static Color[] ThemeColors() => new[]
+    {
+        Window, Canvas, Surface, Hover, Raised, SoftHover, Line, Text, Subtle, Muted,
+        Accent, AmberTint, AmberBorder, Blue, BlueTint, Error
+    };
+
     private static void ApplyTheme()
     {
         UI.Config.Mode = IsLight ? UI.TMode.Light : UI.TMode.Dark;
@@ -165,7 +171,8 @@ internal static class Palette
         }
     }
 
-    public static void Photo(Graphics g, Image image, Rectangle area, int radius, bool contain = false)
+    public static void Photo(Graphics g, Image image, Rectangle area, int radius, bool contain = false,
+        bool resizing = false)
     {
         var state = g.Save();
         using (var path = Round(area, Px(radius)))
@@ -183,7 +190,7 @@ internal static class Palette
                 float ratio = contain ? Math.Min((float)area.Width / image.Width, (float)area.Height / image.Height)
                     : Math.Max((float)area.Width / image.Width, (float)area.Height / image.Height);
                 float width = image.Width * ratio, height = image.Height * ratio;
-                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.InterpolationMode = resizing ? InterpolationMode.Bilinear : InterpolationMode.HighQualityBicubic;
                 g.DrawImage(image, area.X + (area.Width - width) / 2, area.Y + (area.Height - height) / 2, width, height);
             }
         }
@@ -229,11 +236,16 @@ internal sealed class FramePanel : Panel
         BackColor = fill;
         Radius = radius;
         Border = border;
-        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
     }
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
+        if (Radius == 0 && !Border.HasValue)
+        {
+            e.Graphics.Clear(Fill);
+            return;
+        }
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         e.Graphics.Clear(Parent?.BackColor ?? Fill);
         if (Width > 1 && Height > 1)
@@ -368,6 +380,7 @@ internal sealed class PhotoView : Panel
 {
     private Bitmap image;
     private Bitmap backdrop;
+    private bool backdropUsesFastScaling;
     private bool contain;
     public int Radius { get; set; } = 12;
     public bool Hero { get; set; }
@@ -385,7 +398,8 @@ internal sealed class PhotoView : Panel
     public bool Loaded => image != null;
     public PhotoView()
     {
-        SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
+            ControlStyles.ResizeRedraw, true);
         BackColor = Palette.Canvas;
     }
     public void SetImage(Bitmap value)
@@ -408,6 +422,12 @@ internal sealed class PhotoView : Panel
         base.OnSizeChanged(e);
     }
 
+    protected override void OnBackColorChanged(EventArgs e)
+    {
+        ResetBackdrop();
+        base.OnBackColorChanged(e);
+    }
+
     protected override void OnPaintBackground(PaintEventArgs e) => PaintBackdrop(e.Graphics, 0, 0);
 
     internal void PaintBackdrop(Graphics target, int x, int y)
@@ -415,20 +435,23 @@ internal sealed class PhotoView : Panel
         target.Clear(Parent?.BackColor ?? Palette.Canvas);
         if (Width < 2 || Height < 2)
             return;
-        if (backdrop == null)
+        bool fastScaling = image != null && FindForm() is MainForm form && form.IsResizing;
+        if (backdrop == null || backdropUsesFastScaling && !fastScaling)
         {
+            backdrop?.Dispose();
+            backdropUsesFastScaling = fastScaling;
             backdrop = new Bitmap(Width, Height, PixelFormat.Format32bppPArgb);
             using (var g = Graphics.FromImage(backdrop))
-                DrawBackdrop(g);
+                DrawBackdrop(g, fastScaling);
         }
         target.DrawImageUnscaled(backdrop, x, y);
     }
 
-    private void DrawBackdrop(Graphics g)
+    private void DrawBackdrop(Graphics g, bool fastScaling)
     {
         g.Clear(Parent?.BackColor ?? Palette.Canvas);
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        Palette.Photo(g, image, ClientRectangle, Radius, Contain);
+        Palette.Photo(g, image, ClientRectangle, Radius, Contain, fastScaling);
         if (Hero)
         {
             using (var mask = Palette.Round(ClientRectangle, Palette.Px(Radius)))
@@ -483,13 +506,18 @@ internal sealed class PhotoTile : Button
         Cursor = Cursors.Hand;
         FlatStyle = FlatStyle.Flat;
         FlatAppearance.BorderSize = 0;
-        SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
+            ControlStyles.ResizeRedraw, true);
     }
 
     public void SetImage(Bitmap value) { image?.Dispose(); image = value; Invalidate(); }
 
+    public Bitmap CopyThumbnail() => image == null ? null : new Bitmap(image);
+
     public void SetTitle(string title)
     {
+        if (DisplayTitle == title)
+            return;
         DisplayTitle = title;
         AccessibleName = title + ", " + Caption;
         Invalidate();
@@ -505,7 +533,8 @@ internal sealed class PhotoTile : Button
         int px = Palette.Px(4);
         var photo = new Rectangle(px, px, Width - 2 * px,
             Math.Max(1, Height - Palette.Px(Strip ? 26 : 44) - px));
-        Palette.Photo(g, image, photo, Strip ? 10 : 13);
+        bool resizing = image != null && FindForm() is MainForm form && form.IsResizing;
+        Palette.Photo(g, image, photo, Strip ? 10 : 13, resizing: resizing);
         if (Selected || Focused && ShowFocusCues)
         {
             var edge = Rectangle.Inflate(photo, Palette.Px(3), Palette.Px(3));

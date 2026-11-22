@@ -25,14 +25,18 @@ internal sealed partial class MainForm
     private FlowLayoutPanel gallery, tags;
     private TableLayoutPanel recentCards;
     private FrameButton sort;
-    private PictureBox brandIcon;
+    private PictureBox brandIcon, searchIcon;
     private InkLabel footer;
     private string page = "today";
 
     private static int S(int n) => Palette.Px(n);
     private static int Logic(int n) => (int)Math.Round(n / Palette.Scale);
-    private static void Put(Control c, int x, int y, int w, int h) =>
-        c.SetBounds(S(x), S(y), Math.Max(1, S(w)), Math.Max(1, S(h)));
+    private static void Put(Control c, int x, int y, int w, int h)
+    {
+        var bounds = new Rectangle(S(x), S(y), Math.Max(1, S(w)), Math.Max(1, S(h)));
+        if (c.Bounds != bounds)
+            c.Bounds = bounds;
+    }
 
     private void InitializeWindow()
     {
@@ -47,7 +51,6 @@ internal sealed partial class MainForm
         DoubleBuffered = true;
         MinimumSize = new Size(S(956), S(620));
         Size = new Size(Math.Min(work.Width, S(1280)), Math.Min(work.Height, S(860)));
-        Resize += (_, __) => PlaceUi();
     }
 
     private void BuildUi()
@@ -93,10 +96,12 @@ internal sealed partial class MainForm
         }
 
         shell = PanelOn(this, Palette.Canvas, 16, true);
-        todayPage = Add(shell, new Panel { BackColor = Palette.Canvas });
-        libraryPage = Add(shell, new Panel { BackColor = Palette.Canvas });
-        rotationPage = Add(shell, new Panel { BackColor = Palette.Canvas, AutoScroll = true });
-        settingsPage = Add(shell, new Panel { BackColor = Palette.Canvas, AutoScroll = true });
+        todayPage = PanelOn(shell, Palette.Canvas, 0);
+        libraryPage = PanelOn(shell, Palette.Canvas, 0);
+        rotationPage = PanelOn(shell, Palette.Canvas, 0);
+        settingsPage = PanelOn(shell, Palette.Canvas, 0);
+        todayPage.Visible = libraryPage.Visible = rotationPage.Visible = settingsPage.Visible = false;
+        rotationPage.AutoScroll = settingsPage.AutoScroll = true;
         MakeToday();
         MakeLibrary();
         MakeRotation();
@@ -104,6 +109,7 @@ internal sealed partial class MainForm
         footer = LabelOn(this, "", 11, false, Palette.Muted);
         footer.Align = StringAlignment.Far;
         footer.Visible = false;
+        footer.BringToFront();
         PlaceUi();
         ShowPage(page);
     }
@@ -159,8 +165,8 @@ internal sealed partial class MainForm
         libraryTitle = LabelOn(libraryPage, "Library", 42, false, Palette.Text, "Instrument Serif");
         libraryStats = LabelOn(libraryPage, "", 13, false, Palette.Muted);
         searchBox = PanelOn(libraryPage, Palette.Canvas, 10, true);
-        var glass = Add(searchBox, new PictureBox { Image = Palette.Icon("search", 18, Palette.Muted), SizeMode = PictureBoxSizeMode.CenterImage });
-        Put(glass, 10, 10, 22, 20);
+        searchIcon = Add(searchBox, new PictureBox { Image = Palette.Icon("search", 18, Palette.Muted), SizeMode = PictureBoxSizeMode.CenterImage });
+        Put(searchIcon, 10, 10, 22, 20);
         search = InputOn(searchBox, "Search title or tag");
         search.BorderWidth = 0;
         search.TextChanged += (_, __) => RenderLibrary();
@@ -189,7 +195,8 @@ internal sealed partial class MainForm
         metadata = ButtonOn(metadataBar, "Manage metadata", "json", 16, ButtonLook.Soft, OpenMetadata);
 
         inspector = PanelOn(libraryPage, Palette.Surface, 17, true);
-        inspectorDetails = Add(inspector, new Panel { AutoScroll = true, BackColor = Palette.Surface });
+        inspectorDetails = PanelOn(inspector, Palette.Surface, 0);
+        inspectorDetails.AutoScroll = true;
         libraryPreview = Add(inspectorDetails, new PhotoView());
         editTitle = InputOn(inspectorDetails, "Title");
         editTitle.Font = Palette.Font(29, false, "Instrument Serif");
@@ -249,15 +256,30 @@ internal sealed partial class MainForm
         Put(pause, 72, 168, 32, 32);
         Put(next, 133, 168, 32, 32);
         Put(shell, 200, 40, width - 208, height - 48);
-        int w = Logic(shell.Width), h = Logic(shell.Height);
-        foreach (var view in new[] { todayPage, libraryPage, rotationPage, settingsPage })
-            Put(view, 1, 1, w - 2, h - 2);
         Put(footer, 225, height - 29, width - 257, 20);
-        footer.BringToFront();
-        PlaceToday(w - 2, h - 2);
-        PlaceLibrary(w - 2, h - 2);
-        PlaceRotation(w - 2, h - 2);
-        PlaceSettings(w - 2, h - 2);
+        PlaceActivePage();
+    }
+
+    private Panel ActivePage => page == "library" ? libraryPage : page == "rotation" ? rotationPage :
+        page == "settings" ? settingsPage : todayPage;
+
+    private void PlaceActivePage()
+    {
+        int w = Logic(shell.Width) - 2, h = Logic(shell.Height) - 2;
+        Panel active = ActivePage;
+        active.SuspendLayout();
+        try
+        {
+            Put(active, 1, 1, w, h);
+            switch (page)
+            {
+                case "library": PlaceLibrary(w, h); break;
+                case "rotation": PlaceRotation(w, h); break;
+                case "settings": PlaceSettings(w, h); break;
+                default: PlaceToday(w, h); break;
+            }
+        }
+        finally { active.ResumeLayout(true); }
     }
 
     private void PlaceToday(int w, int h)
@@ -306,7 +328,14 @@ internal sealed partial class MainForm
             Put(libraryFilters[i], filterX, 104, filterWidths[i], 30);
             filterX += filterWidths[i] + 7;
         }
-        Put(gallery, 24, 147, body, h - 226);
+        gallery.SuspendLayout();
+        try
+        {
+            Put(gallery, 24, 147, body, h - 226);
+            if (!IsResizing)
+                SizeGallery();
+        }
+        finally { gallery.ResumeLayout(!IsResizing); }
         Put(metadataBar, 24, h - 73, body, 48);
         Put(indexStatus, 16, 10, Math.Max(112, body / 4), 28);
         Put(indexCount, Math.Max(145, body / 4 + 15), 10, Math.Max(20, body - 332), 28);
@@ -340,7 +369,6 @@ internal sealed partial class MainForm
         Put(applySaved, 16, panelHeight - 105, actionWidth, 40);
         Put(revealSaved, 16, panelHeight - 57, actionWidth - 48, 40);
         Put(removeSaved, side - 57, panelHeight - 57, 40, 40);
-        SizeGallery();
     }
 
     internal static T Add<T>(Control parent, T child) where T : Control

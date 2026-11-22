@@ -159,7 +159,15 @@ internal sealed partial class MainForm
             return;
         }
 
-        // Appearance changes are independent of the Save settings button and of the running schedule.
+        // The controls already contain any unsaved values. Keep them when changing only colors.
+        if (newLanguage == settings.Language)
+        {
+            settings = updated;
+            ApplyTheme(newTheme);
+            return;
+        }
+
+        // Preserve draft form values when rebuilding the labels in another language.
         string draftPath = folderPath.Text, draftProxy = proxyAddress.Text, query = search.Text;
         int draftProxyMode = proxyMode.SelectedIndex, draftMarket = market.SelectedIndex;
         int scroll = -settingsPage.AutoScrollPosition.Y;
@@ -197,6 +205,53 @@ internal sealed partial class MainForm
         Invalidate(true);
     }
 
+    private void ApplyTheme(string newTheme)
+    {
+        var previous = Palette.ThemeColors();
+        Palette.SetTheme(newTheme);
+        var colors = previous.Zip(Palette.ThemeColors(), (old, current) => (old, current))
+            .ToDictionary(pair => pair.old, pair => pair.current);
+        Color Recolor(Color color) => colors.TryGetValue(color, out var current) ? current : color;
+        Color? RecolorOptional(Color? color) => color.HasValue ? Recolor(color.Value) : (Color?)null;
+
+        void RecolorControls(Control control)
+        {
+            bool overPhoto = control.Parent == hero;
+            if (control is UI.Input input)
+            {
+                input.BackColor = RecolorOptional(input.BackColor);
+                input.ForeColor = RecolorOptional(input.ForeColor);
+                input.BorderColor = RecolorOptional(input.BorderColor);
+            }
+            else
+            {
+                if (colors.TryGetValue(control.BackColor, out var background))
+                    control.BackColor = background;
+                if (!overPhoto && colors.TryGetValue(control.ForeColor, out var foreground))
+                    control.ForeColor = foreground;
+            }
+            if (control is FramePanel panel)
+            {
+                panel.Fill = Recolor(panel.Fill);
+                panel.Border = RecolorOptional(panel.Border);
+            }
+            else if (control is FrameButton button)
+            {
+                if (!overPhoto)
+                    button.GlyphColor = RecolorOptional(button.GlyphColor);
+                button.SoftFill = RecolorOptional(button.SoftFill);
+            }
+            foreach (Control child in control.Controls)
+                RecolorControls(child);
+        }
+
+        RecolorControls(this);
+        BorderColor = Palette.Line;
+        Dark = !Palette.IsLight;
+        searchIcon.Image = Palette.Icon("search", 18, Palette.Muted);
+        Invalidate(true);
+    }
+
     private void SavePreferences()
     {
         if (changing || refreshing)
@@ -221,6 +276,8 @@ internal sealed partial class MainForm
             updated.Save();
             settings = updated;
             library = opened;
+            if (changeFolder)
+                savedEntry = null;
             if (changeProxy || changeMarket)
             {
                 Cancel(ref heroRequest); ClearRecentCards(); Cancel(ref historyRequest);
@@ -232,7 +289,6 @@ internal sealed partial class MainForm
                 _ = RefreshAsync(true);
             }
             LoadOptions();
-            RenderLibrary();
             ResetSchedule();
             Status("Settings saved");
         });

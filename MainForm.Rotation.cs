@@ -286,7 +286,8 @@ internal sealed partial class MainForm
         pools[0].Subtitle = Strings.Format(all == 1 ? "{0} wallpaper" : "{0} wallpapers", all);
         pools[1].Subtitle = Strings.Format(hearts == 1 ? "{0} wallpaper" : "{0} wallpapers", hearts);
         pools[2].Subtitle = Strings.Get("New ones are downloaded when needed");
-        PlaceUi();
+        if (page == "rotation")
+            PlaceActivePage();
     }
 
     private void PaintRotationStatus()

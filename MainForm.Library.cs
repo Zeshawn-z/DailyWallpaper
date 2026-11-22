@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -11,18 +12,16 @@ internal sealed partial class MainForm
 {
     private void RenderLibrary(string preferredId = null)
     {
-        if (!ready || quitting)
+        if (!ready || quitting || page != "library")
             return;
         preferredId = preferredId ?? savedEntry?.Wallpaper.Id;
-        Cancel(ref galleryRequest);
-        galleryRequest = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         var all = library?.Entries ?? Array.Empty<SavedWallpaper>();
-        var missing = all.Where(entry => !library.Exists(entry)).ToList();
-        var present = all.Except(missing).ToList();
+        var missing = new HashSet<SavedWallpaper>(all.Where(entry => !library.Exists(entry)));
+        var present = all.Where(entry => !missing.Contains(entry)).ToList();
         string query = search.Text.Trim();
         var hits = (libraryFilter == 1 ? all.Where(entry => entry.Favorite) :
             libraryFilter == 2 ? present.Where(entry => entry.Rotation) :
-            libraryFilter == 3 ? missing : all).Where(entry => query.Length == 0 ||
+            libraryFilter == 3 ? all.Where(missing.Contains) : all).Where(entry => query.Length == 0 ||
                 TitleFor(entry.Wallpaper).IndexOf(query, StringComparison.CurrentCultureIgnoreCase) >= 0 ||
                 entry.Wallpaper.Title.IndexOf(query, StringComparison.CurrentCultureIgnoreCase) >= 0 ||
                 entry.Tags.Any(tag => tag.IndexOf(query, StringComparison.CurrentCultureIgnoreCase) >= 0) ||
@@ -48,28 +47,54 @@ internal sealed partial class MainForm
         indexCount.Text = Strings.Format("wallpapers.json · {0} entries", all.Count);
         metadata.Enabled = library != null;
 
-        gallery.SuspendLayout();
-        foreach (var tile in gallery.Controls.OfType<PhotoTile>().ToArray())
-            tile.Dispose();
-        gallery.AutoScrollPosition = Point.Empty;
         galleryEmpty.Text = Strings.Get(library == null ? "Library unavailable. Check the folder in Settings." :
             query.Length > 0 ? "No matching wallpapers" : libraryFilter == 0 ?
                 "Set a Bing wallpaper to start your library." : "No wallpapers in this filter");
         galleryEmpty.Visible = visible.Count == 0;
-        foreach (var entry in visible)
+        var cards = gallery.Controls.OfType<PhotoTile>().ToArray();
+        bool rebuild = cards.Length != visible.Count || cards.Where((card, i) =>
+            card.Entry != visible[i] || card.Missing != missing.Contains(visible[i])).Any();
+        if (rebuild)
         {
-            var tile = new PhotoTile(entry.Wallpaper, entry, Strings.Date(entry.Wallpaper.Day, "d MMM yyyy", "yyyy年M月d日"),
-                false, TitleFor(entry.Wallpaper))
+            Cancel(ref galleryRequest);
+            galleryRequest = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+            gallery.SuspendLayout();
+            try
             {
-                OnDesktop = entry.Wallpaper.Id == settings.CurrentId,
-                Missing = missing.Contains(entry), Margin = new Padding(0, 0, S(12), S(10))
-            };
-            tile.Click += (_, __) => SelectSaved(library.Find(entry.Wallpaper.Id));
-            gallery.Controls.Add(tile);
+                foreach (var tile in cards)
+                    tile.Dispose();
+                gallery.AutoScrollPosition = Point.Empty;
+                foreach (var entry in visible)
+                {
+                    var tile = new PhotoTile(entry.Wallpaper, entry, Strings.Date(entry.Wallpaper.Day, "d MMM yyyy", "yyyy年M月d日"),
+                        false, TitleFor(entry.Wallpaper))
+                    {
+                        OnDesktop = entry.Wallpaper.Id == settings.CurrentId,
+                        Missing = missing.Contains(entry), Margin = new Padding(0, 0, S(12), S(10))
+                    };
+                    tile.Click += (_, __) => SelectSaved(library.Find(entry.Wallpaper.Id));
+                    gallery.Controls.Add(tile);
+                }
+                SizeGallery();
+            }
+            finally { gallery.ResumeLayout(true); }
         }
-        SizeGallery();
-        gallery.ResumeLayout(true);
-        SelectSaved(visible.Find(item => item.Wallpaper.Id == preferredId) ?? visible.FirstOrDefault());
+        else
+            foreach (var tile in cards)
+            {
+                bool onDesktop = tile.Wallpaper.Id == settings.CurrentId;
+                if (tile.OnDesktop != onDesktop)
+                {
+                    tile.OnDesktop = onDesktop;
+                    tile.Invalidate();
+                }
+                tile.SetTitle(TitleFor(tile.Wallpaper));
+            }
+        var selection = visible.Find(item => item.Wallpaper.Id == preferredId) ?? visible.FirstOrDefault();
+        if (rebuild || selection != savedEntry)
+            SelectSaved(selection);
+        else if (selection == null)
+            UpdateButtons();
         QueueGalleryPreviews();
     }
 
@@ -77,17 +102,18 @@ internal sealed partial class MainForm
     {
         if (gallery == null || gallery.Width < S(100))
             return;
-        int width = Math.Max(S(100), (gallery.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - S(32)) / 3);
+        int width = Math.Max(S(100), (gallery.Width - SystemInformation.VerticalScrollBarWidth - 3 * S(12)) / 3);
         int height = width * 9 / 16 + S(44);
+        var tileSize = new Size(width, height);
         foreach (PhotoTile tile in gallery.Controls.OfType<PhotoTile>())
-            tile.Size = new Size(width, height);
-        galleryEmpty.Size = new Size(gallery.ClientSize.Width - S(10), S(65));
-        QueueGalleryPreviews();
+            if (tile.Size != tileSize)
+                tile.Size = tileSize;
+        galleryEmpty.Size = new Size(gallery.Width - SystemInformation.VerticalScrollBarWidth - S(10), S(65));
     }
 
     private void QueueGalleryPreviews()
     {
-        if (!ready || page != "library" || galleryRequest == null || quitting)
+        if (!ready || page != "library" || galleryRequest == null || quitting || IsResizing)
             return;
         var viewport = Rectangle.Inflate(gallery.ClientRectangle, 0, S(160));
         foreach (PhotoTile tile in gallery.Controls.OfType<PhotoTile>())
@@ -102,13 +128,20 @@ internal sealed partial class MainForm
     private void SelectSaved(SavedWallpaper entry)
     {
         savedEntry = entry;
+        PhotoTile selectedCard = null;
         foreach (PhotoTile tile in gallery.Controls.OfType<PhotoTile>())
         {
-            tile.Selected = tile.Wallpaper.Id == entry?.Wallpaper.Id;
-            tile.Invalidate();
+            bool selectedTile = tile.Wallpaper.Id == entry?.Wallpaper.Id;
+            if (selectedTile)
+                selectedCard = tile;
+            if (tile.Selected != selectedTile)
+            {
+                tile.Selected = selectedTile;
+                tile.Invalidate();
+            }
         }
         Cancel(ref inspectorRequest);
-        libraryPreview.SetImage(null);
+        libraryPreview.SetImage(selectedCard?.CopyThumbnail());
         editingDetails = true;
         editTitle.Text = TitleFor(entry?.Wallpaper) ?? "";
         detailDate.Text = entry == null ? "—" : Strings.Date(entry.Wallpaper.Day, "ddd, d MMM yyyy", "yyyy年M月d日");

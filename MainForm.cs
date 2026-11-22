@@ -78,7 +78,6 @@ internal sealed partial class MainForm : AntdUI.Window
         };
         ready = true;
         LoadOptions();
-        RenderLibrary();
         ResetSchedule();
         Status(startupIssue ?? "");
         Shown += async (_, __) =>
@@ -107,10 +106,13 @@ internal sealed partial class MainForm : AntdUI.Window
     private void ShowPage(string view)
     {
         page = view;
-        todayPage.Visible = view == "today";
-        libraryPage.Visible = view == "library";
-        rotationPage.Visible = view == "rotation";
-        settingsPage.Visible = view == "settings";
+        PlaceActivePage();
+        Panel active = ActivePage;
+        active.BringToFront();
+        active.Show();
+        foreach (Control other in shell.Controls)
+            if (other != active)
+                other.Hide();
         string[] names = { "today", "library", "rotation", "settings" };
         for (int i = 0; i < navigation.Length; i++)
         {
@@ -124,9 +126,8 @@ internal sealed partial class MainForm : AntdUI.Window
         {
             Attempt(() => library?.Reload());
             RenderLibrary(savedEntry?.Wallpaper.Id);
-            QueueGalleryPreviews();
         }
-        else if (view == "today" && (recentCards.Controls.Count == 0 || selected == null))
+        else if (view == "today" && recentCards.Controls.Count == 0)
             ShowRecent();
         else if (view == "rotation")
         {
@@ -134,6 +135,51 @@ internal sealed partial class MainForm : AntdUI.Window
             ShowRecentChanges();
             PaintRotationStatus();
         }
+    }
+
+    internal bool IsResizing { get; private set; }
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            const int Composited = 0x02000000;
+            var parameters = base.CreateParams;
+            parameters.ExStyle |= Composited;
+            return parameters;
+        }
+    }
+
+    protected override void OnResizeBegin(EventArgs e)
+    {
+        IsResizing = true;
+        gallery.SuspendLayout();
+        base.OnResizeBegin(e);
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        if (WindowState != FormWindowState.Minimized)
+        {
+            PlaceUi();
+            QueueGalleryPreviews();
+        }
+    }
+
+    protected override void OnResizeEnd(EventArgs e)
+    {
+        IsResizing = false;
+        gallery.ResumeLayout(false);
+        if (page == "today")
+            todayPage.Invalidate(true);
+        else if (page == "library")
+        {
+            PlaceActivePage();
+            libraryPage.Invalidate(true);
+            QueueGalleryPreviews();
+        }
+        base.OnResizeEnd(e);
     }
 
     public void ShowFromTray()
@@ -299,14 +345,22 @@ internal sealed partial class MainForm : AntdUI.Window
 
     private void SelectToday(Wallpaper item)
     {
-        selected = item;
         Cancel(ref heroRequest);
-        hero.SetImage(null);
-        RefreshTodayLabels();
-        if (item == null)
+        if (item == null || item.Id == selected?.Id && hero.Loaded ||
+            item.BingPath == null && LocalPath(item) == null)
+        {
+            if (item == null || item.Id != selected?.Id)
+                hero.SetImage(null);
+            selected = item;
+            RefreshTodayLabels();
             return;
+        }
         heroRequest = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
-        _ = LoadPhotoAsync(hero, item, false, heroRequest.Token);
+        _ = LoadPhotoAsync(hero, item, false, heroRequest.Token, () =>
+        {
+            selected = item;
+            RefreshTodayLabels();
+        });
     }
 
     private void RefreshTodayLabels()
@@ -334,7 +388,6 @@ internal sealed partial class MainForm : AntdUI.Window
         string fitMode = settings.Fit;
         fit.Text = Strings.Get(fitMode);
         hero.Contain = fitMode == "Fit" || fitMode == "Center";
-        hero.Invalidate();
         favorite.GlyphColor = entry?.Favorite == true ? Palette.Amber : Palette.PhotoInk;
         favorite.AccessibleName = Strings.Get(entry?.Favorite == true ? "Remove from favorites" : "Add to favorites");
         favorite.Invalidate();
@@ -343,13 +396,21 @@ internal sealed partial class MainForm : AntdUI.Window
             item.Downloadable ? Strings.Format("Saves as {0}", library?.ProposedName(item, TitleFor(item)) ??
                 TitleFor(item) + "_" + item.Date + ".jpg") : Strings.Get("Download unavailable");
         marketName.Text = Strings.Get(settings?.Market == "zh-CN" ? "Bing · China" : "Bing · United States");
-        PlaceToday(Logic(todayPage.Width), Logic(todayPage.Height));
+        if (page == "today")
+            PlaceToday(Logic(todayPage.Width), Logic(todayPage.Height));
         foreach (PhotoTile tile in recentCards.Controls)
         {
-            tile.Selected = item?.Id == tile.Wallpaper.Id;
+            bool selectedTile = item?.Id == tile.Wallpaper.Id;
             var stored = library?.Find(tile.Wallpaper.Id);
-            tile.Saved = stored != null && library.Exists(stored);
-            tile.OnDesktop = settings?.CurrentId == tile.Wallpaper.Id;
+            bool savedTile = stored != null && library.Exists(stored);
+            bool desktopTile = settings?.CurrentId == tile.Wallpaper.Id;
+            if (tile.Selected != selectedTile || tile.Saved != savedTile || tile.OnDesktop != desktopTile)
+            {
+                tile.Selected = selectedTile;
+                tile.Saved = savedTile;
+                tile.OnDesktop = desktopTile;
+                tile.Invalidate();
+            }
             tile.SetTitle(TitleFor(tile.Wallpaper));
             tip.SetToolTip(tile, tile.DisplayTitle);
         }
@@ -362,7 +423,8 @@ internal sealed partial class MainForm : AntdUI.Window
         return stored != null && library.Exists(stored) ? library.PathOf(stored) : null;
     }
 
-    private async Task LoadPhotoAsync(PhotoView view, Wallpaper item, bool thumbnail, CancellationToken token)
+    private async Task LoadPhotoAsync(PhotoView view, Wallpaper item, bool thumbnail, CancellationToken token,
+        Action loaded = null)
     {
         try
         {
@@ -371,12 +433,21 @@ internal sealed partial class MainForm : AntdUI.Window
                 return;
             var image = await bing.PreviewAsync(item, file, thumbnail, token);
             if (token.IsCancellationRequested || view.IsDisposed) image.Dispose();
-            else view.SetImage(image);
+            else
+            {
+                view.SetImage(image);
+                tip.SetToolTip(view, "");
+                loaded?.Invoke();
+            }
         }
         catch (Exception error) when (Operational(error))
         {
             if (!token.IsCancellationRequested && !view.IsDisposed)
+            {
                 tip.SetToolTip(view, ErrorText(error));
+                if (view == hero)
+                    Status(ErrorText(error), true);
+            }
         }
     }
 
@@ -467,8 +538,9 @@ internal sealed partial class MainForm : AntdUI.Window
         editTitle.Enabled = !changing && savedEntry != null;
         savedFavorite.Enabled = savedRotation.Enabled = !changing && savedEntry != null;
         saveSettings.Enabled = !changing && !refreshing;
-        previous.Enabled = next.Enabled = !changing && RotationPool().Count > 0;
-        changeNow.Enabled = !changing && (queued != null || RotationPool().Count > 0);
+        bool canRotate = !changing && RotationCandidates().Any();
+        previous.Enabled = next.Enabled = canRotate;
+        changeNow.Enabled = !changing && (queued != null || canRotate);
     }
 
     private Wallpaper FindWallpaper(string id) => id == null ? null :
@@ -477,11 +549,13 @@ internal sealed partial class MainForm : AntdUI.Window
     private void UpdateDesktopCard()
     {
         Cancel(ref desktopRequest);
-        desktopPreview.SetImage(null);
         var item = FindWallpaper(settings.CurrentId);
         UpdateDesktopTitle();
         if (item == null)
+        {
+            desktopPreview.SetImage(null);
             return;
+        }
         desktopRequest = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         _ = LoadPhotoAsync(desktopPreview, item, true, desktopRequest.Token);
     }
@@ -492,18 +566,24 @@ internal sealed partial class MainForm : AntdUI.Window
             Strings.Get("No wallpaper set");
     }
 
-    private List<Wallpaper> RotationPool()
+    private IEnumerable<Wallpaper> RotationCandidates()
     {
         if (settings.RotationMode == "daily" || settings.Pool == "bing")
         {
             var pool = recent.Where(item => (item.Downloadable || LocalPath(item) != null) &&
                 library?.Find(item.Id)?.Rotation != false);
-            return (settings.RotationMode == "daily" ? pool.Take(1) : pool).ToList();
+            return settings.RotationMode == "daily" ? pool.Take(1) : pool;
         }
         return library?.Entries.Where(entry => entry.Rotation && library.Exists(entry) &&
             (settings.Pool != "favorites" || entry.Favorite))
-            .OrderByDescending(entry => entry.Wallpaper.Date, StringComparer.Ordinal)
-            .Select(entry => entry.Wallpaper).ToList() ?? new List<Wallpaper>();
+            .Select(entry => entry.Wallpaper) ?? Enumerable.Empty<Wallpaper>();
+    }
+
+    private List<Wallpaper> RotationPool()
+    {
+        var candidates = RotationCandidates();
+        return (settings.RotationMode == "daily" || settings.Pool == "bing" ? candidates :
+            candidates.OrderByDescending(item => item.Date, StringComparer.Ordinal)).ToList();
     }
 
     private void PickQueue(bool another = false)
@@ -524,12 +604,13 @@ internal sealed partial class MainForm : AntdUI.Window
     private void UpdateQueuePreview()
     {
         Cancel(ref queueRequest);
-        nextPreview.SetImage(null);
         if (queued != null)
         {
             queueRequest = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
             _ = LoadPhotoAsync(nextPreview, queued, true, queueRequest.Token);
         }
+        else
+            nextPreview.SetImage(null);
     }
 
     private async Task ChangeNowAsync()
