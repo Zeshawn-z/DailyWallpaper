@@ -68,8 +68,9 @@ internal sealed partial class MainForm : AntdUI.Window
         }
         catch (Exception error) when (Operational(error)) { startupIssue = error.Message; }
 
-        tray = new NotifyIcon { Text = "Dayframe " + Program.Version, Icon = Icon, Visible = true };
+        tray = new NotifyIcon { Icon = Icon };
         RebuildTrayMenu();
+        tray.Visible = true;
         tray.DoubleClick += (_, __) => ShowFromTray();
         wallpaperTimer.Tick += async (_, __) => await OnWallpaperTimerAsync();
         clock.Tick += (_, __) => PaintRotationStatus();
@@ -106,6 +107,7 @@ internal sealed partial class MainForm : AntdUI.Window
         trayMenu.Items.Add(Strings.Get("Pause / resume auto-change"), null, (_, __) => TogglePaused());
         trayMenu.Items.Add(new ToolStripSeparator());
         trayMenu.Items.Add(Strings.Get("Exit"), null, (_, __) => { quitting = true; Close(); });
+        tray.Text = Strings.AppTitle;
         tray.ContextMenuStrip = trayMenu;
         previousMenu?.Dispose();
     }
@@ -802,7 +804,7 @@ internal sealed partial class MainForm : AntdUI.Window
     private void NotifyError(string message)
     {
         if (!quitting)
-            tray?.ShowBalloonTip(3500, "Dayframe", message, ToolTipIcon.Warning);
+            tray?.ShowBalloonTip(3500, Strings.AppTitle, message, ToolTipIcon.Warning);
     }
 
     internal void Report(Exception error) => NotifyError(ErrorText(error));

@@ -9,6 +9,7 @@ internal static class Strings
     private static readonly CultureInfo Chinese = CultureInfo.GetCultureInfo("zh-CN");
     public static bool IsChinese { get; private set; }
     public static CultureInfo Culture => IsChinese ? Chinese : English;
+    public static string AppTitle => Get("Dayframe");
 
     public static void SetLanguage(string language) => IsChinese = language == "zh-CN";
     public static string Get(string english) =>
@@ -22,6 +23,7 @@ internal static class Strings
     private static readonly Dictionary<string, string> Translations = new Dictionary<string, string>
     {
         // Navigation, tray and Today.
+        ["Dayframe"] = "每日壁纸",
         ["Today"] = "今日",
         ["Library"] = "壁纸库",
         ["Vertical scroll bar"] = "垂直滚动条",
@@ -30,7 +32,7 @@ internal static class Strings
         ["Minimize"] = "最小化",
         ["Maximize or restore"] = "最大化或还原",
         ["Close"] = "关闭",
-        ["Open Dayframe"] = "打开 Dayframe",
+        ["Open Dayframe"] = "打开每日壁纸",
         ["Pause / resume auto-change"] = "暂停或恢复自动换图",
         ["Exit"] = "退出",
         ["An older version is still running in the tray. Exit it there, then choose Retry to open this version."] =
@@ -231,11 +233,11 @@ internal static class Strings
         ["Controls which daily images appear in Today."] = "决定「今日」页面显示哪个地区的 Bing 每日图片。",
         ["United States"] = "美国",
         ["China"] = "中国",
-        ["Choose Dayframe’s wallpaper folder"] = "选择 Dayframe 的壁纸保存文件夹",
+        ["Choose Dayframe’s wallpaper folder"] = "选择每日壁纸的保存文件夹",
         ["Enter an absolute folder path, for example D:\\Bing Wallpapers."] = "请输入绝对路径，例如 D:\\Bing Wallpapers。",
         ["Choose a shorter absolute path for the library."] = "请选择较短的壁纸库绝对路径。",
         ["Invalid proxy mode."] = "代理模式无效。",
-        ["Invalid Dayframe settings."] = "Dayframe 设置无效。",
+        ["Invalid Dayframe settings."] = "每日壁纸设置无效。",
         ["Use a valid interval and keep the shortest time at or below the longest."] = "请输入有效的间隔，最短间隔须小于或等于最长间隔。",
         ["The request timed out or was cancelled."] = "请求超时或已取消。",
         ["Enter an HTTP proxy address, for example 127.0.0.1:7890."] = "请输入 HTTP 代理地址，例如 127.0.0.1:7890。",

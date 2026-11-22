@@ -67,7 +67,7 @@ internal static class Program
                     // An unreadable preference file must not stop the old-version notice.
                 }
                 if (MessageBox.Show(Strings.Get("An older version is still running in the tray. Exit it there, then choose Retry to open this version."),
-                    "Dayframe " + Version, MessageBoxButtons.RetryCancel, MessageBoxIcon.Information) != DialogResult.Retry)
+                    Strings.AppTitle, MessageBoxButtons.RetryCancel, MessageBoxIcon.Information) != DialogResult.Retry)
                     return;
             }
 

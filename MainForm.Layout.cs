@@ -46,7 +46,6 @@ internal sealed partial class MainForm
         var work = Screen.PrimaryScreen.WorkingArea;
         using (var canvas = CreateGraphics())
             Palette.Configure(Math.Min(canvas.DpiX / 96f, Math.Min(work.Width / 1120f, work.Height / 760f)));
-        Text = "Dayframe " + Program.Version;
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application;
         StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
@@ -56,6 +55,7 @@ internal sealed partial class MainForm
 
     private void BuildUi()
     {
+        Text = Strings.AppTitle;
         BackColor = Palette.Window;
         BorderColor = Palette.Line;
         Font = Palette.Font();

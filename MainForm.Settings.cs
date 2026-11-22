@@ -22,7 +22,7 @@ internal sealed partial class MainForm
         settingsTitle = LabelOn(content, "Settings", 42, false, Palette.Text, Palette.SerifFamily);
         settingsSub = LabelOn(content, "Manage your library location and connection to Bing.", 13, false, Palette.Muted);
         saveSettings = ButtonOn(content, "Save settings", "check", 16, ButtonLook.Primary, SavePreferences);
-        versionLabel = LabelOn(content, "Dayframe " + Program.Version, 12, false, Palette.Muted);
+        versionLabel = LabelOn(content, Strings.AppTitle + " " + Program.Version, 12, false, Palette.Muted);
         versionLabel.Align = StringAlignment.Far;
         appearanceCard = PanelOn(content, Palette.Surface, 17, true);
         appearanceTitle = LabelOn(appearanceCard, "Appearance", 22, false, Palette.Text, Palette.SerifFamily);
