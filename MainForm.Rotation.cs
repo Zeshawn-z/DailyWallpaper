@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Text;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -34,7 +35,7 @@ internal sealed partial class MainForm
 
     private void MakeRotation()
     {
-        autoTitle = LabelOn(rotationPage, "Auto-change", 42, false, Palette.Text, "Instrument Serif");
+        autoTitle = LabelOn(rotationPage, "Auto-change", 42, false, Palette.Text, Palette.SerifFamily);
         autoSub = LabelOn(rotationPage, "Runs in the background. Closing this window does not stop it.", 13, false, Palette.Muted);
         masterCard = PanelOn(rotationPage, Palette.Surface, 15, true);
         masterTitle = LabelOn(masterCard, "Auto-change is off", 14, true);
@@ -45,7 +46,7 @@ internal sealed partial class MainForm
         });
 
         schedulePanel = PanelOn(rotationPage, Palette.Surface, 17, true);
-        scheduleTitle = LabelOn(schedulePanel, "Schedule", 22, false, Palette.Text, "Instrument Serif");
+        scheduleTitle = LabelOn(schedulePanel, "Schedule", 22, false, Palette.Text, Palette.SerifFamily);
         scheduleSub = LabelOn(schedulePanel, "Applies to the wallpaper, not the screen saver", 12, false, Palette.Muted);
         scheduleSub.Align = StringAlignment.Far;
         segments = PanelOn(schedulePanel, Palette.Canvas, 12, true);
@@ -57,9 +58,9 @@ internal sealed partial class MainForm
             CommitSchedule();
         })).ToArray();
         intervalIntro = LabelOn(schedulePanel, "Change every", 15, false, Palette.Subtle);
-        interval = NumberOn(schedulePanel, "Interval in minutes");
-        minInterval = NumberOn(schedulePanel, "Shortest interval in minutes");
-        maxInterval = NumberOn(schedulePanel, "Longest interval in minutes");
+        interval = NumberOn(schedulePanel, "Interval in minutes", 24);
+        minInterval = NumberOn(schedulePanel, "Shortest interval in minutes", 18);
+        maxInterval = NumberOn(schedulePanel, "Longest interval in minutes", 18);
         minUnit = LabelOn(schedulePanel, "min", 14, false, Palette.Subtle);
         andLabel = LabelOn(schedulePanel, "and", 14, false, Palette.Subtle);
         maxUnit = LabelOn(schedulePanel, "min", 14, false, Palette.Subtle);
@@ -83,7 +84,7 @@ internal sealed partial class MainForm
         timeline = Add(schedulePanel, new ScheduleTimeline());
 
         poolPanel = PanelOn(rotationPage, Palette.Surface, 17, true);
-        poolTitle = LabelOn(poolPanel, "Pick from", 22, false, Palette.Text, "Instrument Serif");
+        poolTitle = LabelOn(poolPanel, "Pick from", 22, false, Palette.Text, Palette.SerifFamily);
         string[] poolTitles = { "Everything in Library", "Favorites only", "The last 8 days from Bing" };
         string[] poolValues = { "library", "favorites", "bing" };
         pools = poolTitles.Select((title, index) => ButtonOn(poolPanel, title, null, 0, ButtonLook.Choice,
@@ -99,7 +100,7 @@ internal sealed partial class MainForm
         nextPanel = PanelOn(rotationPage, Palette.Surface, 17, true);
         countdown = Add(nextPanel, new Countdown());
         nextCaption = LabelOn(nextPanel, "Next change", 12, false, Palette.Muted);
-        nextTime = LabelOn(nextPanel, "—", 40, false, Palette.Text, "Instrument Serif");
+        nextTime = LabelOn(nextPanel, "—", 40, false, Palette.Text, Palette.SerifFamily);
         nextDate = LabelOn(nextPanel, "", 12, false, Palette.Muted);
         nextPreview = Add(nextPanel, new PhotoView { Radius = 8 });
         nextItemCaption = LabelOn(nextPanel, "Up next", 11, false, Palette.Muted);
@@ -114,12 +115,12 @@ internal sealed partial class MainForm
         pauseFor.Font = Palette.Font(13);
 
         historyPanel = PanelOn(rotationPage, Palette.Surface, 17, true);
-        historyTitle = LabelOn(historyPanel, "Recent changes", 22, false, Palette.Text, "Instrument Serif");
+        historyTitle = LabelOn(historyPanel, "Recent changes", 22, false, Palette.Text, Palette.SerifFamily);
         historyTimes = Enumerable.Range(0, 3).Select(_ => LabelOn(historyPanel, "", 11, false, Palette.Muted, "JetBrains Mono")).ToArray();
         historyNames = Enumerable.Range(0, 3).Select(_ => LabelOn(historyPanel, "", 13, true)).ToArray();
         historyPhotos = Enumerable.Range(0, 3).Select(_ => Add(historyPanel, new PhotoView { Radius = 6 })).ToArray();
         backgroundPanel = PanelOn(rotationPage, Palette.Surface, 17, true);
-        backgroundTitle = LabelOn(backgroundPanel, "Background", 22, false, Palette.Text, "Instrument Serif");
+        backgroundTitle = LabelOn(backgroundPanel, "Background", 22, false, Palette.Text, Palette.SerifFamily);
         string[] backgrounds = { "Start with Windows", "Keep running in the tray when closed", "Pause on battery power" };
         backgroundLabels = backgrounds.Select(item => LabelOn(backgroundPanel, item)).ToArray();
         startWindows = ToggleOn(backgroundPanel, backgrounds[0], value =>
@@ -139,13 +140,13 @@ internal sealed partial class MainForm
         });
     }
 
-    private UI.InputNumber NumberOn(Control parent, string description)
+    private UI.InputNumber NumberOn(Control parent, string description, int fontSize)
     {
         var number = Add(parent, new UI.InputNumber
         {
             Minimum = 1, Maximum = 10080, ShowControl = false, TextAlign = HorizontalAlignment.Center,
             BackColor = Palette.Canvas, BorderColor = Palette.Line, ForeColor = Palette.Text, Radius = 12,
-            AccessibleName = Strings.Get(description), Font = Palette.Font(36, false, "Instrument Serif")
+            PaddGap = .15f, AccessibleName = Strings.Get(description), Font = Palette.Font(fontSize, false, "Segoe UI")
         });
         number.LostFocus += (_, __) => CommitSchedule();
         number.KeyDown += (_, e) =>
@@ -166,8 +167,8 @@ internal sealed partial class MainForm
         Put(autoTitle, sx + 24, sy + 20, main, 50);
         Put(autoSub, sx + 24, sy + 68, main, 23);
         Put(masterCard, sx + right + side - 213, sy + 27, 213, 58);
-        Put(masterTitle, 17, 8, 145, 23);
-        Put(masterHint, 17, 29, 145, 23);
+        Put(masterTitle, 17, 8, 131, 23);
+        Put(masterHint, 17, 29, 131, 23);
         Put(master, 156, 17, 40, 24);
         Put(schedulePanel, sx + 24, sy + 104, main, scheduleHeight);
         Put(scheduleTitle, 20, 16, 130, 37);
@@ -208,7 +209,7 @@ internal sealed partial class MainForm
         Put(poolTitle, 20, 14, main - 40, 36);
         for (int i = 0; i < 3; i++)
             Put(pools[i], 20, 58 + i * 55, main - 40, 52);
-        Put(avoidTitle, 20, 247, main - 78, 34);
+        Put(avoidTitle, 20, 247, main - 88, 34);
         Put(avoid, main - 60, 253, 40, 24);
 
         Put(nextPanel, sx + right, sy + 104, side, 248);
@@ -313,8 +314,9 @@ internal sealed partial class MainForm
         nextTime.Text = due.HasValue && !pausedNow ? due.Value.LocalDateTime.ToString("HH:mm", Strings.Culture) : "—";
         nextDate.Text = due.HasValue && !pausedNow ? Strings.Date(due.Value.LocalDateTime, "ddd d MMM", "M月d日 ddd") : "";
         nextItemTitle.Text = TitleFor(queued) ?? Strings.Get("No wallpaper queued");
-        pause.Glyph = pausedNow || settings.RotationEnabled != true ? "next" : "pause";
-        pause.AccessibleName = Strings.Get(pausedNow ? "Resume auto-change" : "Pause auto-change");
+        bool canResume = pausedNow || settings.RotationEnabled != true;
+        pause.Glyph = canResume ? "play" : "pause";
+        pause.AccessibleName = Strings.Get(canResume ? "Resume auto-change" : "Pause auto-change");
         pause.Invalidate();
         timeline.Times = plan.Times;
         timeline.Last = settings.History.FirstOrDefault()?.At;
@@ -361,15 +363,25 @@ internal sealed partial class MainForm
             Palette.PaintControlBackground(this, e.Graphics);
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             int inset = S(6);
+            int stroke = S(6);
             var circle = new Rectangle(inset, inset, Width - 2 * inset, Height - 2 * inset);
-            using (var track = new Pen(Palette.Raised, S(6)))
-            using (var active = new Pen(Palette.Accent, S(6)) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            using (var track = new Pen(Palette.Raised, stroke))
+            using (var active = new Pen(Palette.Accent, stroke) { StartCap = LineCap.Round, EndCap = LineCap.Round })
             {
                 e.Graphics.DrawEllipse(track, circle);
                 if (Progress > 0)
                     e.Graphics.DrawArc(active, circle, -90, (float)(Progress * 360));
             }
-            Palette.Write(e.Graphics, Text, Palette.Font(20, false, "JetBrains Mono"), ClientRectangle, Palette.Text, StringAlignment.Center);
+            var textBounds = Rectangle.Inflate(circle, -(stroke / 2 + S(4)), 0);
+            e.Graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            using (var format = StringFormat.GenericTypographic)
+            {
+                int size = 20;
+                Font font = Palette.Font(size, false, "JetBrains Mono");
+                while (size > 8 && e.Graphics.MeasureString(Text, font, int.MaxValue, format).Width > textBounds.Width)
+                    font = Palette.Font(--size, false, "JetBrains Mono");
+                Palette.Write(e.Graphics, Text, font, textBounds, Palette.Text, StringAlignment.Center);
+            }
         }
     }
 

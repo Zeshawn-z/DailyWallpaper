@@ -754,12 +754,13 @@ internal sealed partial class MainForm : AntdUI.Window
         public override Color SeparatorLight => Palette.Line;
     }
 
-    private static void Popup(Control anchor, params (string Title, Action Action)[] actions)
+    private void Popup(Control anchor, params (string Title, Action Action)[] actions)
     {
         var menu = MakeMenu();
         foreach (var item in actions)
             menu.Items.Add(Strings.Get(item.Title), null, (_, __) => item.Action());
-        menu.Closed += (_, __) => menu.Dispose();
+        // WinForms still uses the menu handle after raising Closed.
+        menu.Closed += (_, __) => BeginInvoke((Action)menu.Dispose);
         menu.Show(anchor, new Point(0, anchor.Height + S(3)));
     }
 

@@ -4,6 +4,8 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Net;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
@@ -17,6 +19,30 @@ internal static class Program
 
     [STAThread]
     private static void Main(string[] args)
+    {
+        AppDomain.CurrentDomain.AssemblyResolve += ResolveEmbeddedAssembly;
+        Run(args);
+    }
+
+    private static Assembly ResolveEmbeddedAssembly(object sender, ResolveEventArgs args) =>
+        new AssemblyName(args.Name).Name == "AntdUI"
+            ? Assembly.Load(ReadResource("BingWallpapers.Dependencies.AntdUI.dll"))
+            : null;
+
+    internal static byte[] ReadResource(string name)
+    {
+        using (var resource = typeof(Program).Assembly.GetManifestResourceStream(name)
+            ?? throw new InvalidOperationException("Missing embedded resource: " + name))
+        using (var data = new MemoryStream())
+        {
+            resource.CopyTo(data);
+            return data.ToArray();
+        }
+    }
+
+    // Attach the resolver before the JIT compiles code that uses AntdUI.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void Run(string[] args)
     {
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);

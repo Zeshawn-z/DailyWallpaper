@@ -43,6 +43,7 @@ internal static class Palette
     private static readonly Dictionary<(string Name, int Size, int Color), Bitmap> icons =
         new Dictionary<(string, int, int), Bitmap>();
     public static float Scale { get; private set; } = 1;
+    public static string SerifFamily => Strings.IsChinese ? "SimSun" : "Georgia";
     public static int Px(int logical) => (int)Math.Round(logical * Scale);
     private static Color Themed(int dark, int light) =>
         Color.FromArgb(unchecked((int)0xff000000) | (IsLight ? light : dark));
@@ -52,12 +53,22 @@ internal static class Palette
         Scale = scale;
         if (fonts.Families.Length == 0)
         {
-            string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Fonts");
-            foreach (string file in new[] { "Inter.ttf", "Inter-Bold.ttf", "InstrumentSerif.ttf", "JetBrainsMono.ttf" })
+            string directory = Path.Combine(Settings.Profile, "cache", "fonts", Program.Version);
+            Directory.CreateDirectory(directory);
+            foreach (string file in new[] { "Inter.ttf", "Inter-Bold.ttf", "JetBrainsMono.ttf" })
             {
-                string font = Path.Combine(path, file);
-                if (File.Exists(font))
-                    fonts.AddFontFile(font);
+                string font = Path.Combine(directory, file);
+                if (!File.Exists(font))
+                {
+                    string temporary = font + ".tmp";
+                    try
+                    {
+                        File.WriteAllBytes(temporary, Program.ReadResource("BingWallpapers.Fonts." + file));
+                        File.Move(temporary, font);
+                    }
+                    finally { File.Delete(temporary); }
+                }
+                fonts.AddFontFile(font);
             }
         }
         ApplyTheme();
@@ -98,12 +109,10 @@ internal static class Palette
     {
         if (Strings.IsChinese && face == "Inter")
             face = "Microsoft YaHei UI";
-        else if (Strings.IsChinese && face == "Instrument Serif")
-            face = "SimSun";
         var key = (face, Px(pixels), bold);
         if (type.TryGetValue(key, out var font))
             return font;
-        string fallback = face == "Instrument Serif" ? "Georgia" : face == "JetBrains Mono" ? "Consolas" :
+        string fallback = face == "JetBrains Mono" ? "Consolas" :
             face == "Inter" ? "Segoe UI" : face;
         var family = fonts.Families.FirstOrDefault(value => value.Name == face);
         var style = bold && (family == null || family.IsStyleAvailable(FontStyle.Bold)) ? FontStyle.Bold : FontStyle.Regular;

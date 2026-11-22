@@ -126,7 +126,7 @@ internal sealed partial class MainForm
         fit = ButtonOn(hero, "Fill", "desktop", 16, ButtonLook.Glass, ShowFitChoices);
         fit.EndGlyph = "down";
         fit.EndGlyphSize = 15;
-        heroTitle = LabelOn(hero, "Getting today’s wallpaper…", 56, false, Palette.PhotoInk, "Instrument Serif");
+        heroTitle = LabelOn(hero, "Getting today’s wallpaper…", Strings.IsChinese ? 56 : 50, false, Palette.PhotoInk, Palette.SerifFamily);
         heroCredit = LabelOn(hero, "", 12, false, Palette.PhotoInk, "JetBrains Mono");
         about = ButtonOn(hero, "About this image", "external", 16, ButtonLook.PhotoLink, OpenAbout);
         favorite = ButtonOn(hero, "", "heart", 20, ButtonLook.Glass, async () => await ToggleTodayFavoriteAsync(), "Add to favorites");
@@ -136,7 +136,7 @@ internal sealed partial class MainForm
         fileHint = LabelOn(hero, "", 11, false, Palette.PhotoInk, Strings.IsChinese ? "Inter" : "JetBrains Mono");
         fileHint.Align = StringAlignment.Far;
 
-        recentTitle = LabelOn(todayPage, "Last 8 days", 23, false, Palette.Text, "Instrument Serif");
+        recentTitle = LabelOn(todayPage, "Last 8 days", 23, false, Palette.Text, Palette.SerifFamily);
         marketName = LabelOn(todayPage, "Bing · United States", 12, false, Palette.Muted);
         legendSaved = ButtonOn(todayPage, "Saved", "check", 14, ButtonLook.Plain, null);
         legendDesktop = ButtonOn(todayPage, "On desktop", "desktop", 14, ButtonLook.Plain, null);
@@ -158,7 +158,7 @@ internal sealed partial class MainForm
 
     private void MakeLibrary()
     {
-        libraryTitle = LabelOn(libraryPage, "Library", 42, false, Palette.Text, "Instrument Serif");
+        libraryTitle = LabelOn(libraryPage, "Library", 42, false, Palette.Text, Palette.SerifFamily);
         libraryStats = LabelOn(libraryPage, "", 13, false, Palette.Muted);
         searchBox = PanelOn(libraryPage, Palette.Canvas, 10, true);
         searchIcon = Add(searchBox, new PictureBox { Image = Palette.Icon("search", 18, Palette.Muted), SizeMode = PictureBoxSizeMode.CenterImage });
@@ -191,7 +191,7 @@ internal sealed partial class MainForm
         inspectorDetails.AutoScroll = true;
         libraryPreview = Add(inspectorDetails, new PhotoView());
         editTitle = InputOn(inspectorDetails, "Title");
-        editTitle.Font = Palette.Font(29, false, "Instrument Serif");
+        editTitle.Font = Palette.Font(29, false, Palette.SerifFamily);
         editTitle.BackColor = Palette.Surface;
         editTitle.BorderWidth = 0;
         editTitle.LostFocus += (_, __) => CommitTitle();
@@ -261,7 +261,13 @@ internal sealed partial class MainForm
         active.SuspendLayout();
         try
         {
+            Size previous = active.Size;
             Put(active, 1, 1, w, h);
+            if (active.Region == null || active.Size != previous)
+            {
+                using (var corners = Palette.Round(new Rectangle(Point.Empty, active.Size), S(shell.Radius - 1)))
+                    active.Region = new Region(corners);
+            }
             switch (page)
             {
                 case "library": PlaceLibrary(w, h); break;
@@ -291,7 +297,7 @@ internal sealed partial class MainForm
         Put(apply, width - 226, height - 102, 194, 48);
         Put(fileHint, width - 394, height - 48, 362, 24);
         int stripTop = 24 + height + 17;
-        int recentHeadingWidth = Strings.IsChinese ? 130 : 104;
+        int recentHeadingWidth = 132;
         Put(recentTitle, x, stripTop, recentHeadingWidth, 37);
         Put(marketName, x + recentHeadingWidth, stripTop + 3, 175, 34);
         Put(legendSaved, w - 413, stripTop + 4, 76, 30);
@@ -305,7 +311,7 @@ internal sealed partial class MainForm
         int side = Math.Max(252, Math.Min(320, (int)(w * .30)));
         int start = w - side - 24;
         int body = start - 48;
-        Put(libraryTitle, 24, 20, Math.Max(146, body - 370), 49);
+        Put(libraryTitle, 24, 20, Math.Max(166, body - 370), 49);
         Put(libraryStats, 24, 68, body - 355, 24);
         int sortWidth = Math.Min(150, body / 4);
         int searchWidth = Math.Min(210, body / 3);

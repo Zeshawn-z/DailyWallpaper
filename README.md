@@ -4,7 +4,7 @@ Dayframe 是根据提供的 Dayframe 界面稿实现的 Windows Bing 壁纸管�
 
 ## 运行
 
-解压发布包后双击 `BingWallpapers.exe`。请保留同目录的配置、`AntdUI.dll` 和 `Assets\Fonts`。如果旧版 Bing Wallpapers 正在托盘运行，请先从托盘退出旧版。Windows 7 SP1 访问 Bing 需要可用的 TLS 1.2 和证书信任链。
+双击 `BingWallpapers.exe` 即可运行。程序文件已内嵌 AntdUI 和所用字体。如果旧版 Bing Wallpapers 正在托盘运行，请先从托盘退出旧版。Windows 7 SP1 访问 Bing 需要可用的 TLS 1.2 和证书信任链。
 
 ## 页面
 
@@ -25,4 +25,4 @@ Dayframe 是根据提供的 Dayframe 界面稿实现的 Windows Bing 壁纸管�
 dotnet build .\BingWallpapers.csproj -c Release
 ```
 
-输出位于 `bin\Release\net472`。AntdUI 与设计稿附带字体的许可证位于 `Licenses`。
+单文件输出为 `bin\Release\net472\BingWallpapers.exe`。随程序分发的许可证已内嵌在 EXE 中，源文件位于 `Licenses`。

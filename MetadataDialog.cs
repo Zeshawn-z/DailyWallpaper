@@ -32,7 +32,7 @@ internal sealed class MetadataDialog : Form
 
         var panel = MainForm.PanelOn(this, Palette.Surface, 19, true);
         panel.Dock = DockStyle.Fill;
-        Put(MainForm.LabelOn(panel, "Metadata file", 36, false, Palette.Text, "Instrument Serif"), 28, 18, 605, 45);
+        Put(MainForm.LabelOn(panel, "Metadata file", 36, false, Palette.Text, Palette.SerifFamily), 28, 18, 605, 45);
         Put(MainForm.LabelOn(panel, "Everything the app remembers about your wallpapers lives in one JSON file next to the images.",
             13, false, Palette.Muted), 28, 62, 703, 32);
         Put(Button(panel, "", "close", 18, ButtonLook.Soft, Close, "Close"), 737, 24, 36, 36);
