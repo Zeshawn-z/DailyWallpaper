@@ -222,13 +222,14 @@ internal sealed class WallpaperLibrary
 
     public List<string> UntrackedFiles()
     {
-        if (!Directory.Exists(DirectoryPath))
-            return new List<string>();
         var indexed = new HashSet<string>(entries.Select(entry => entry.FileName), StringComparer.OrdinalIgnoreCase);
-        return Directory.EnumerateFiles(DirectoryPath).Select(Path.GetFileName)
-            .Where(name => IsImageName(name) && !indexed.Contains(name))
+        return ImageFiles().Select(file => file.Name).Where(name => !indexed.Contains(name))
             .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase).ToList();
     }
+
+    public IEnumerable<FileInfo> ImageFiles() => Directory.Exists(DirectoryPath)
+        ? new DirectoryInfo(DirectoryPath).EnumerateFiles().Where(file => IsImageName(file.Name))
+        : Enumerable.Empty<FileInfo>();
 
     public void ImportFiles(bool rebuild)
     {

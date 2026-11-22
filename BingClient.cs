@@ -219,7 +219,7 @@ internal sealed class BingClient : IDisposable
         }
     }
 
-    private static Bitmap Resize(Image source, int maxWidth)
+    internal static Bitmap Resize(Image source, int maxWidth)
     {
         int width = Math.Min(maxWidth, source.Width);
         int height = Math.Max(1, (int)Math.Round((double)source.Height * width / source.Width));

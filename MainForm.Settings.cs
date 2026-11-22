@@ -177,10 +177,9 @@ internal sealed partial class MainForm
         SuspendLayout();
         try
         {
-            Cancel(ref heroRequest); Cancel(ref recentRequest); Cancel(ref galleryRequest);
+            Cancel(ref heroRequest); Cancel(ref recentRequest);
             Cancel(ref inspectorRequest); Cancel(ref desktopRequest); Cancel(ref queueRequest); Cancel(ref historyRequest);
             tip.RemoveAll();
-            footer = null;
             while (Controls.Count != 0)
                 Controls[0].Dispose();
             Strings.SetLanguage(newLanguage);
@@ -290,7 +289,6 @@ internal sealed partial class MainForm
             }
             LoadOptions();
             ResetSchedule();
-            Status("Settings saved");
         });
     }
 

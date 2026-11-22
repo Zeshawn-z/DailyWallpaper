@@ -17,16 +17,16 @@ internal sealed partial class MainForm
     private FrameButton previous, pause, next, todayDate, todayState, resolution, fit, about, favorite,
         more, apply, legendSaved, legendDesktop, older, metadata, copyName, applySaved, revealSaved, removeSaved;
     private InkLabel brandName, nowCaption, nowTitle, nowNext, heroTitle, heroCredit, fileHint, recentTitle,
-        marketName, libraryTitle, libraryStats, indexStatus, indexCount, galleryEmpty,
+        marketName, libraryTitle, libraryStats, indexStatus, indexCount,
         detailDate, detailSize, detailCredit, detailApplied, nameLabel, tagsLabel, favoriteLabel, rotationLabel;
     private FramePanel nameBox;
     private UI.Input search, editTitle;
     private ToggleControl savedFavorite, savedRotation;
-    private FlowLayoutPanel gallery, tags;
+    private LibraryGallery gallery;
+    private FlowLayoutPanel tags;
     private TableLayoutPanel recentCards;
     private FrameButton sort;
     private PictureBox brandIcon, searchIcon;
-    private InkLabel footer;
     private string page = "today";
 
     private static int S(int n) => Palette.Px(n);
@@ -106,10 +106,6 @@ internal sealed partial class MainForm
         MakeLibrary();
         MakeRotation();
         MakeSettings();
-        footer = LabelOn(this, "", 11, false, Palette.Muted);
-        footer.Align = StringAlignment.Far;
-        footer.Visible = false;
-        footer.BringToFront();
         PlaceUi();
         ShowPage(page);
     }
@@ -181,18 +177,14 @@ internal sealed partial class MainForm
             item.Radius = 15;
         }
 
-        gallery = Add(libraryPage, new FlowLayoutPanel
-        {
-            AutoScroll = true, WrapContents = true, BackColor = Palette.Canvas, Margin = Padding.Empty
-        });
-        gallery.Scroll += (_, __) => QueueGalleryPreviews();
-        gallery.MouseWheel += (_, __) => BeginInvoke(new Action(QueueGalleryPreviews));
-        galleryEmpty = LabelOn(gallery, "", 14, false, Palette.Muted);
+        gallery = Add(libraryPage, new LibraryGallery(TitleFor, SelectSaved));
 
         metadataBar = PanelOn(libraryPage, Palette.Surface, 12, true);
         indexStatus = LabelOn(metadataBar, "", 13, true);
         indexCount = LabelOn(metadataBar, "", 11, false, Palette.Muted, Strings.IsChinese ? "Inter" : "JetBrains Mono");
         metadata = ButtonOn(metadataBar, "Manage metadata", "json", 16, ButtonLook.Soft, OpenMetadata);
+        metadata.Font = Palette.Font(13);
+        metadata.BringToFront();
 
         inspector = PanelOn(libraryPage, Palette.Surface, 17, true);
         inspectorDetails = PanelOn(inspector, Palette.Surface, 0);
@@ -237,7 +229,7 @@ internal sealed partial class MainForm
 
     private void PlaceUi()
     {
-        if (footer == null || ClientSize.Width < 200)
+        if (shell == null || ClientSize.Width < 200)
             return;
         int width = Logic(ClientSize.Width), height = Logic(ClientSize.Height);
         Put(chrome, 0, 0, width, 40);
@@ -256,7 +248,6 @@ internal sealed partial class MainForm
         Put(pause, 72, 168, 32, 32);
         Put(next, 133, 168, 32, 32);
         Put(shell, 200, 40, width - 208, height - 48);
-        Put(footer, 225, height - 29, width - 257, 20);
         PlaceActivePage();
     }
 
@@ -328,18 +319,14 @@ internal sealed partial class MainForm
             Put(libraryFilters[i], filterX, 104, filterWidths[i], 30);
             filterX += filterWidths[i] + 7;
         }
-        gallery.SuspendLayout();
-        try
-        {
-            Put(gallery, 24, 147, body, h - 226);
-            if (!IsResizing)
-                SizeGallery();
-        }
-        finally { gallery.ResumeLayout(!IsResizing); }
+        Put(gallery, 24, 147, body, h - 226);
         Put(metadataBar, 24, h - 73, body, 48);
-        Put(indexStatus, 16, 10, Math.Max(112, body / 4), 28);
-        Put(indexCount, Math.Max(145, body / 4 + 15), 10, Math.Max(20, body - 332), 28);
-        Put(metadata, body - 169, 8, 159, 32);
+        int buttonLeft = body - 169;
+        int countLeft = Math.Max(145, body / 4 + 15);
+        Put(indexStatus, 16, 10, Math.Min(countLeft, buttonLeft) - 24, 28);
+        indexCount.Visible = buttonLeft - countLeft >= 92;
+        Put(indexCount, countLeft, 10, buttonLeft - countLeft - 12, 28);
+        Put(metadata, buttonLeft, 8, 159, 32);
         Put(inspector, start, 24, side, h - 48);
         int actionWidth = side - 34, panelHeight = h - 48;
         int detailsHeight = panelHeight - 126;

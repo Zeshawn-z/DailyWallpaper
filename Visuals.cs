@@ -485,22 +485,16 @@ internal sealed class PhotoView : Panel
 internal sealed class PhotoTile : Button
 {
     public Wallpaper Wallpaper { get; }
-    public SavedWallpaper Entry { get; }
     public bool Selected { get; set; }
     public bool Saved { get; set; }
     public bool OnDesktop { get; set; }
-    public bool Missing { get; set; }
-    public bool Requested { get; set; }
-    public bool Strip { get; }
     public string Caption { get; }
     public string DisplayTitle { get; private set; }
     private Bitmap image;
 
-    public PhotoTile(Wallpaper wallpaper, SavedWallpaper entry, string caption, bool strip, string displayTitle)
+    public PhotoTile(Wallpaper wallpaper, string caption, string displayTitle)
     {
         Wallpaper = wallpaper;
-        Entry = entry;
-        Strip = strip;
         Caption = caption;
         SetTitle(displayTitle);
         Cursor = Cursors.Hand;
@@ -511,8 +505,6 @@ internal sealed class PhotoTile : Button
     }
 
     public void SetImage(Bitmap value) { image?.Dispose(); image = value; Invalidate(); }
-
-    public Bitmap CopyThumbnail() => image == null ? null : new Bitmap(image);
 
     public void SetTitle(string title)
     {
@@ -532,17 +524,17 @@ internal sealed class PhotoTile : Button
         g.SmoothingMode = SmoothingMode.AntiAlias;
         int px = Palette.Px(4);
         var photo = new Rectangle(px, px, Width - 2 * px,
-            Math.Max(1, Height - Palette.Px(Strip ? 26 : 44) - px));
+            Math.Max(1, Height - Palette.Px(26) - px));
         bool resizing = image != null && FindForm() is MainForm form && form.IsResizing;
-        Palette.Photo(g, image, photo, Strip ? 10 : 13, resizing: resizing);
+        Palette.Photo(g, image, photo, 10, resizing: resizing);
         if (Selected || Focused && ShowFocusCues)
         {
             var edge = Rectangle.Inflate(photo, Palette.Px(3), Palette.Px(3));
-            using (var frame = Palette.Round(edge, Palette.Px(Strip ? 13 : 15)))
+            using (var frame = Palette.Round(edge, Palette.Px(13)))
             using (var pen = new Pen(Palette.Accent, Palette.Px(2))) g.DrawPath(pen, frame);
         }
 
-        string glyph = Missing ? "warning" : OnDesktop ? "desktop" : Entry?.Favorite == true ? "heart" : Strip && Saved ? "check" : null;
+        string glyph = OnDesktop ? "desktop" : Saved ? "check" : null;
         if (glyph != null)
         {
             var marker = new Rectangle(photo.Right - Palette.Px(25), photo.Top + Palette.Px(6), Palette.Px(20), Palette.Px(20));
@@ -550,12 +542,9 @@ internal sealed class PhotoTile : Button
             var badge = Palette.Icon(glyph, 12, glyph == "check" ? Palette.PhotoBlue : Palette.Amber);
             g.DrawImageUnscaled(badge, marker.Left + (marker.Width - badge.Width) / 2, marker.Top + (marker.Height - badge.Height) / 2);
         }
-        if (!Strip)
-            Palette.Write(g, DisplayTitle, Palette.Font(13, true), new Rectangle(px, photo.Bottom + Palette.Px(6),
-                photo.Width, Palette.Px(18)), Palette.Text);
-        Palette.Write(g, Caption, Strip ? Palette.Font(11, Selected, Strings.IsChinese ? "Inter" : "JetBrains Mono") : Palette.Font(12),
-            new Rectangle(px, photo.Bottom + Palette.Px(Strip ? 7 : 23), photo.Width, Palette.Px(17)),
-            Strip && Selected ? Palette.Accent : Palette.Muted);
+        Palette.Write(g, Caption, Palette.Font(11, Selected, Strings.IsChinese ? "Inter" : "JetBrains Mono"),
+            new Rectangle(px, photo.Bottom + Palette.Px(7), photo.Width, Palette.Px(17)),
+            Selected ? Palette.Accent : Palette.Muted);
     }
     protected override void OnGotFocus(EventArgs e) { base.OnGotFocus(e); Invalidate(); }
     protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); Invalidate(); }

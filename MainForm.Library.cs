@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -16,23 +15,26 @@ internal sealed partial class MainForm
             return;
         preferredId = preferredId ?? savedEntry?.Wallpaper.Id;
         var all = library?.Entries ?? Array.Empty<SavedWallpaper>();
-        var missing = new HashSet<SavedWallpaper>(all.Where(entry => !library.Exists(entry)));
-        var present = all.Where(entry => !missing.Contains(entry)).ToList();
+        var files = (library?.ImageFiles() ?? Enumerable.Empty<FileInfo>())
+            .ToDictionary(file => file.Name, StringComparer.OrdinalIgnoreCase);
+        var present = all.Where(entry => files.ContainsKey(entry.FileName)).ToList();
+        int missingCount = all.Count - present.Count;
         string query = search.Text.Trim();
+        string dateQuery = query.Replace(".", "").Replace("-", "");
         var hits = (libraryFilter == 1 ? all.Where(entry => entry.Favorite) :
             libraryFilter == 2 ? present.Where(entry => entry.Rotation) :
-            libraryFilter == 3 ? all.Where(missing.Contains) : all).Where(entry => query.Length == 0 ||
+            libraryFilter == 3 ? all.Where(entry => !files.ContainsKey(entry.FileName)) : all).Where(entry => query.Length == 0 ||
                 TitleFor(entry.Wallpaper).IndexOf(query, StringComparison.CurrentCultureIgnoreCase) >= 0 ||
                 entry.Wallpaper.Title.IndexOf(query, StringComparison.CurrentCultureIgnoreCase) >= 0 ||
                 entry.Tags.Any(tag => tag.IndexOf(query, StringComparison.CurrentCultureIgnoreCase) >= 0) ||
-                entry.Wallpaper.Date.Contains(query.Replace(".", "").Replace("-", "")));
+                entry.Wallpaper.Date.Contains(dateQuery));
         var ordered = order == 1 ? hits.OrderBy(entry => entry.Wallpaper.Date, StringComparer.Ordinal)
             : order == 2 ? hits.OrderBy(entry => TitleFor(entry.Wallpaper), StringComparer.Create(Strings.Culture, true))
             : hits.OrderByDescending(entry => entry.Wallpaper.Date, StringComparer.Ordinal);
         var visible = ordered.ToList();
         libraryStats.Text = Strings.Format(all.Count == 1 ? "{0} wallpaper" : "{0} wallpapers", all.Count) +
-            " · " + FormatBytes(present.Sum(entry => library.Bytes(entry)));
-        int[] counts = { all.Count, all.Count(item => item.Favorite), present.Count(item => item.Rotation), missing.Count };
+            " · " + FormatBytes(present.Sum(entry => files[entry.FileName].Length));
+        int[] counts = { all.Count, all.Count(item => item.Favorite), present.Count(item => item.Rotation), missingCount };
         string[] categories = { "All", "Favorites", "In rotation", "Missing file" };
         for (int i = 0; i < libraryFilters.Length; i++)
         {
@@ -40,108 +42,38 @@ internal sealed partial class MainForm
             libraryFilters[i].Selected = i == libraryFilter;
             libraryFilters[i].Invalidate();
         }
-        int issues = missing.Count + (library?.UntrackedFiles().Count ?? 0);
+        int issues = missingCount + files.Count - present.Count;
         indexStatus.Text = issues == 0 ? Strings.Get("Metadata is up to date") :
             Strings.Format(issues == 1 ? "{0} metadata issue" : "{0} metadata issues", issues);
         indexStatus.ForeColor = issues == 0 ? Palette.Blue : Palette.Accent;
         indexCount.Text = Strings.Format("wallpapers.json · {0} entries", all.Count);
         metadata.Enabled = library != null;
 
-        galleryEmpty.Text = Strings.Get(library == null ? "Library unavailable. Check the folder in Settings." :
+        string emptyText = Strings.Get(library == null ? "Library unavailable. Check the folder in Settings." :
             query.Length > 0 ? "No matching wallpapers" : libraryFilter == 0 ?
                 "Set a Bing wallpaper to start your library." : "No wallpapers in this filter");
-        galleryEmpty.Visible = visible.Count == 0;
-        var cards = gallery.Controls.OfType<PhotoTile>().ToArray();
-        bool rebuild = galleryRequest == null || cards.Length != visible.Count || cards.Where((card, i) =>
-            card.Entry != visible[i] || card.Missing != missing.Contains(visible[i])).Any();
-        if (rebuild)
+        gallery.SetItems(visible.Select(entry =>
         {
-            Cancel(ref galleryRequest);
-            galleryRequest = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
-            gallery.SuspendLayout();
-            try
-            {
-                foreach (var tile in cards)
-                    tile.Dispose();
-                gallery.AutoScrollPosition = Point.Empty;
-                foreach (var entry in visible)
-                {
-                    var tile = new PhotoTile(entry.Wallpaper, entry, Strings.Date(entry.Wallpaper.Day, "d MMM yyyy", "yyyy年M月d日"),
-                        false, TitleFor(entry.Wallpaper))
-                    {
-                        OnDesktop = entry.Wallpaper.Id == settings.CurrentId,
-                        Missing = missing.Contains(entry), Margin = new Padding(0, 0, S(12), S(10))
-                    };
-                    tile.Click += (_, __) => SelectSaved(library.Find(entry.Wallpaper.Id));
-                    gallery.Controls.Add(tile);
-                }
-                SizeGallery();
-            }
-            finally { gallery.ResumeLayout(true); }
-        }
-        else
-            foreach (var tile in cards)
-            {
-                bool onDesktop = tile.Wallpaper.Id == settings.CurrentId;
-                if (tile.OnDesktop != onDesktop)
-                {
-                    tile.OnDesktop = onDesktop;
-                    tile.Invalidate();
-                }
-                tile.SetTitle(TitleFor(tile.Wallpaper));
-            }
+            files.TryGetValue(entry.FileName, out FileInfo file);
+            return new LibraryGallery.Card(entry, file);
+        }).ToArray(), settings.CurrentId, emptyText);
         var selection = visible.Find(item => item.Wallpaper.Id == preferredId) ?? visible.FirstOrDefault();
-        if (rebuild || selection != savedEntry)
+        bool available = selection != null && files.ContainsKey(selection.FileName);
+        if (selection != savedEntry || selection == null || available != libraryPreview.Loaded)
             SelectSaved(selection);
-        else if (selection == null)
-            UpdateButtons();
-        QueueGalleryPreviews();
-    }
-
-    private void SizeGallery()
-    {
-        if (gallery == null || gallery.Width < S(100))
-            return;
-        int width = Math.Max(S(100), (gallery.Width - SystemInformation.VerticalScrollBarWidth - 3 * S(12)) / 3);
-        int height = width * 9 / 16 + S(44);
-        var tileSize = new Size(width, height);
-        foreach (PhotoTile tile in gallery.Controls.OfType<PhotoTile>())
-            if (tile.Size != tileSize)
-                tile.Size = tileSize;
-        galleryEmpty.Size = new Size(gallery.Width - SystemInformation.VerticalScrollBarWidth - S(10), S(65));
-    }
-
-    private void QueueGalleryPreviews()
-    {
-        if (!ready || page != "library" || galleryRequest == null || quitting || IsResizing)
-            return;
-        var viewport = Rectangle.Inflate(gallery.ClientRectangle, 0, S(160));
-        foreach (PhotoTile tile in gallery.Controls.OfType<PhotoTile>())
+        else
         {
-            if (tile.Requested || tile.Missing || !tile.Bounds.IntersectsWith(viewport))
-                continue;
-            tile.Requested = true;
-            _ = LoadTileAsync(tile, galleryRequest.Token);
+            gallery.SelectEntry(selection);
+            UpdateButtons();
         }
     }
 
     private void SelectSaved(SavedWallpaper entry)
     {
         savedEntry = entry;
-        PhotoTile selectedCard = null;
-        foreach (PhotoTile tile in gallery.Controls.OfType<PhotoTile>())
-        {
-            bool selectedTile = tile.Wallpaper.Id == entry?.Wallpaper.Id;
-            if (selectedTile)
-                selectedCard = tile;
-            if (tile.Selected != selectedTile)
-            {
-                tile.Selected = selectedTile;
-                tile.Invalidate();
-            }
-        }
+        gallery.SelectEntry(entry);
         Cancel(ref inspectorRequest);
-        libraryPreview.SetImage(selectedCard?.CopyThumbnail());
+        libraryPreview.SetImage(gallery.CopySelectedThumbnail());
         editingDetails = true;
         editTitle.Text = TitleFor(entry?.Wallpaper) ?? "";
         detailDate.Text = entry == null ? "—" : Strings.Date(entry.Wallpaper.Day, "ddd, d MMM yyyy", "yyyy年M月d日");
@@ -216,7 +148,6 @@ internal sealed partial class MainForm
         {
             var updated = change(savedEntry);
             library.Update(updated);
-            savedEntry = updated;
             RenderLibrary(updated.Wallpaper.Id);
             RefreshTodayLabels();
             UpdateDesktopCard();

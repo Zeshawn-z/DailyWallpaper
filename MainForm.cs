@@ -29,7 +29,7 @@ internal sealed partial class MainForm : AntdUI.Window
     private List<Wallpaper> recent = new List<Wallpaper>();
     private Wallpaper selected;
     private SavedWallpaper savedEntry;
-    private CancellationTokenSource heroRequest, recentRequest, galleryRequest, inspectorRequest, desktopRequest;
+    private CancellationTokenSource heroRequest, recentRequest, inspectorRequest, desktopRequest;
     private DateTimeOffset refreshAfter, nextAttempt;
     private bool ready, loadingControls, refreshing, changing, quitting, editingDetails;
     private int libraryFilter, order;
@@ -79,7 +79,8 @@ internal sealed partial class MainForm : AntdUI.Window
         ready = true;
         LoadOptions();
         ResetSchedule();
-        Status(startupIssue ?? "");
+        if (startupIssue != null)
+            NotifyError(startupIssue);
         Shown += async (_, __) =>
         {
             if (startHidden)
@@ -153,7 +154,6 @@ internal sealed partial class MainForm : AntdUI.Window
     protected override void OnResizeBegin(EventArgs e)
     {
         IsResizing = true;
-        gallery.SuspendLayout();
         base.OnResizeBegin(e);
     }
 
@@ -161,23 +161,17 @@ internal sealed partial class MainForm : AntdUI.Window
     {
         base.OnResize(e);
         if (WindowState != FormWindowState.Minimized)
-        {
             PlaceUi();
-            QueueGalleryPreviews();
-        }
     }
 
     protected override void OnResizeEnd(EventArgs e)
     {
         IsResizing = false;
-        gallery.ResumeLayout(false);
         if (page == "today")
             todayPage.Invalidate(true);
         else if (page == "library")
         {
-            PlaceActivePage();
             libraryPage.Invalidate(true);
-            QueueGalleryPreviews();
         }
         base.OnResizeEnd(e);
     }
@@ -230,8 +224,6 @@ internal sealed partial class MainForm : AntdUI.Window
             }
             PickQueue();
             _ = RefreshTitlesAsync();
-            if (force)
-                Status("Bing wallpapers updated");
         }
         catch (Exception error) when (Operational(error))
         {
@@ -239,7 +231,7 @@ internal sealed partial class MainForm : AntdUI.Window
             refreshAfter = DateTimeOffset.Now.AddMinutes(10);
             if (recent.Count == 0)
                 heroTitle.Text = Strings.Get("Could not load Bing wallpapers");
-            Status(recent.Count == 0 ? ErrorText(error) : "Showing cached Bing wallpapers", true);
+            NotifyError(recent.Count == 0 ? ErrorText(error) : Strings.Get("Showing cached Bing wallpapers"));
         }
         finally { refreshing = false; UpdateButtons(); }
     }
@@ -297,11 +289,10 @@ internal sealed partial class MainForm : AntdUI.Window
     private void RefreshDisplayedTitles()
     {
         RefreshTodayLabels();
-        foreach (var tile in gallery.Controls.OfType<PhotoTile>())
-        {
-            tile.SetTitle(TitleFor(tile.Wallpaper));
-            tip.SetToolTip(tile, tile.DisplayTitle);
-        }
+        if (page == "library" && order == 2)
+            RenderLibrary();
+        else
+            gallery.Invalidate();
         if (savedEntry != null && !editTitle.Focused)
             editTitle.Text = TitleFor(savedEntry.Wallpaper);
         UpdateDesktopTitle();
@@ -328,8 +319,8 @@ internal sealed partial class MainForm : AntdUI.Window
         foreach (var item in recent)
         {
             bool newest = item == recent[0];
-            var tile = new PhotoTile(item, null, newest ? Strings.Get("Today") : Strings.Date(item.Day, "ddd d", "ddd d日"),
-                true, TitleFor(item))
+            var tile = new PhotoTile(item, newest ? Strings.Get("Today") : Strings.Date(item.Day, "ddd d", "ddd d日"),
+                TitleFor(item))
             {
                 Dock = DockStyle.Fill, Margin = new Padding(0, 0, S(4), 0)
             };
@@ -446,7 +437,7 @@ internal sealed partial class MainForm : AntdUI.Window
             {
                 tip.SetToolTip(view, ErrorText(error));
                 if (view == hero)
-                    Status(ErrorText(error), true);
+                    Report(error);
             }
         }
     }
@@ -488,7 +479,6 @@ internal sealed partial class MainForm : AntdUI.Window
             settings.History = settings.History.Take(20).ToList();
             settings.Save();
             library.Update(entry.With(appliedAt: at));
-            Status(Strings.Format("Wallpaper set · {0}", TitleFor(entry.Wallpaper)));
         }
         catch (Exception error) when (Operational(error)) { Report(error); }
         finally
@@ -515,7 +505,6 @@ internal sealed partial class MainForm : AntdUI.Window
         {
             var entry = await library.SaveAsync(selected, bing, lifetime.Token, TitleFor(selected));
             library.Update(entry.With(favorite: !entry.Favorite));
-            Status(entry.Favorite ? "Removed from favorites" : "Added to favorites");
         }
         catch (Exception error) when (Operational(error)) { Report(error); }
         finally
@@ -780,24 +769,13 @@ internal sealed partial class MainForm : AntdUI.Window
         catch (Exception error) when (Operational(error)) { Report(error); }
     }
 
-    private void Status(string value, bool error = false)
+    private void NotifyError(string message)
     {
-        if (quitting)
-            return;
-        footer.Text = Strings.Get(value);
-        footer.Visible = !string.IsNullOrEmpty(value);
-        footer.ForeColor = error ? Palette.Error : Palette.Muted;
-        tip.SetToolTip(footer, footer.Text);
+        if (!quitting)
+            tray?.ShowBalloonTip(3500, "Dayframe", message, ToolTipIcon.Warning);
     }
 
-    internal void Report(Exception error)
-    {
-        if (quitting)
-            return;
-        Status(ErrorText(error), true);
-        if (!Visible)
-            tray?.ShowBalloonTip(3500, "Dayframe", ErrorText(error), ToolTipIcon.Warning);
-    }
+    internal void Report(Exception error) => NotifyError(ErrorText(error));
 
     private static bool Operational(Exception error) => error is IOException || error is UnauthorizedAccessException ||
         error is ArgumentException || error is HttpRequestException || error is OperationCanceledException ||
@@ -830,7 +808,7 @@ internal sealed partial class MainForm : AntdUI.Window
         {
             quitting = true;
             lifetime.Cancel();
-            Cancel(ref heroRequest); Cancel(ref recentRequest); Cancel(ref galleryRequest); Cancel(ref inspectorRequest);
+            Cancel(ref heroRequest); Cancel(ref recentRequest); Cancel(ref inspectorRequest);
             Cancel(ref desktopRequest); Cancel(ref queueRequest); Cancel(ref historyRequest);
             wallpaperTimer.Dispose(); clock.Dispose(); tray?.Dispose(); trayMenu?.Dispose();
             bing?.Dispose(); lifetime.Dispose(); tip.Dispose();
