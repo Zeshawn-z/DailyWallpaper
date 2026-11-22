@@ -31,6 +31,8 @@ internal sealed class Settings
     [DataMember] public string CurrentId { get; set; }
     [DataMember] public string CurrentFit { get; set; }
     [DataMember] public string Market { get; set; } = "en-US";
+    [DataMember] public string Language { get; set; } = "en-US";
+    [DataMember] public string Theme { get; set; } = "dark";
     [DataMember] public string Fit { get; set; } = "Fill";
     [DataMember] public string Pool { get; set; } = "library";
     [DataMember] public bool? RotationEnabled { get; set; } = false;
@@ -44,6 +46,8 @@ internal sealed class Settings
     {
         var value = JsonFile.Read<Settings>(FilePath) ?? new Settings();
         value.Market = value.Market ?? "en-US";
+        value.Language = value.Language == "zh-CN" ? "zh-CN" : "en-US";
+        value.Theme = value.Theme == "light" ? "light" : "dark";
         value.Fit = value.Fit ?? "Fill";
         value.CurrentFit = value.CurrentFit ?? value.Fit;
         value.Pool = value.Pool ?? "library";
@@ -77,6 +81,7 @@ internal sealed class Wallpaper
     [DataMember] public string CopyrightLink { get; set; }
     [DataMember] public string BingPath { get; set; }
     [DataMember] public bool Downloadable { get; set; }
+    [DataMember(EmitDefaultValue = false)] public bool CustomTitle { get; set; }
 
     public DateTime Day => DateTime.ParseExact(Date, "yyyyMMdd", CultureInfo.InvariantCulture);
     public string DisplayDate => Day.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture);
@@ -103,7 +108,8 @@ internal sealed class SavedWallpaper
             item.Wallpaper = new Wallpaper
             {
                 Id = Wallpaper.Id, Title = title, Date = Wallpaper.Date, Copyright = Wallpaper.Copyright,
-                CopyrightLink = Wallpaper.CopyrightLink, BingPath = Wallpaper.BingPath, Downloadable = Wallpaper.Downloadable
+                CopyrightLink = Wallpaper.CopyrightLink, BingPath = Wallpaper.BingPath, Downloadable = Wallpaper.Downloadable,
+                CustomTitle = true
             };
         item.Favorite = favorite ?? Favorite;
         item.Rotation = rotation ?? Rotation;
@@ -135,14 +141,17 @@ internal sealed class WallpaperLibrary
             return;
         List<SavedWallpaper> imported;
         try { imported = ReadIndex(); }
-        catch (SerializationException error) { throw new InvalidDataException($"Could not read the wallpaper index at {IndexPath}.", error); }
+        catch (SerializationException error)
+        {
+            throw new InvalidDataException(Strings.Format("Could not read the wallpaper index at {0}.", IndexPath), error);
+        }
         if (imported.Any(entry => entry?.Wallpaper == null ||
             !DateTime.TryParseExact(entry.Wallpaper.Date, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _) ||
             string.IsNullOrWhiteSpace(entry.Wallpaper.Id) || string.IsNullOrWhiteSpace(entry.Wallpaper.Title) ||
             !IsImageName(entry.FileName)) ||
             imported.Select(entry => entry.FileName).Distinct(StringComparer.OrdinalIgnoreCase).Count() != imported.Count ||
             imported.Select(entry => entry.Wallpaper.Id).Distinct(StringComparer.Ordinal).Count() != imported.Count)
-            throw new InvalidDataException("The index contains incomplete or duplicate wallpapers.");
+            throw new InvalidDataException(Strings.Get("The index contains incomplete or duplicate wallpapers."));
         entries = imported;
         indexWritten = lastWrite;
     }
@@ -155,7 +164,8 @@ internal sealed class WallpaperLibrary
 
     public string PathOf(SavedWallpaper entry) => Path.Combine(DirectoryPath, entry.FileName);
     public SavedWallpaper Find(string id) => entries.Find(entry => entry.Wallpaper.Id == id);
-    public string ProposedName(Wallpaper wallpaper) => Find(wallpaper.Id)?.FileName ?? NextName(wallpaper);
+    public string ProposedName(Wallpaper wallpaper, string title = null) =>
+        Find(wallpaper.Id)?.FileName ?? NextName(wallpaper.Date, title ?? wallpaper.Title);
     public bool Exists(SavedWallpaper entry) => File.Exists(PathOf(entry));
     public long Bytes(SavedWallpaper entry) => Exists(entry) ? new FileInfo(PathOf(entry)).Length : 0;
 
@@ -182,7 +192,7 @@ internal sealed class WallpaperLibrary
                 }
                 var index = JsonFile.Read<IndexFile>(stream);
                 if (index == null || index.Version != 1 || index.Items == null)
-                    throw new InvalidDataException("Unsupported wallpaper index format.");
+                    throw new InvalidDataException(Strings.Get("Unsupported wallpaper index format."));
                 return index.Items.Select(item => item?.ToEntry()).ToList();
             }
         }
@@ -199,7 +209,7 @@ internal sealed class WallpaperLibrary
     private void Commit(List<SavedWallpaper> next)
     {
         if (File.GetLastWriteTimeUtc(IndexPath) != indexWritten)
-            throw new IOException("wallpapers.json changed outside Dayframe. Reopen Library before editing it.");
+            throw new IOException(Strings.Get("wallpapers.json changed outside Dayframe. Reopen Library before editing it."));
         JsonFile.Write(IndexPath, Index(next), BackupPath);
         indexWritten = File.GetLastWriteTimeUtc(IndexPath);
         entries = next;
@@ -255,7 +265,7 @@ internal sealed class WallpaperLibrary
     public void RemoveMissing() => Commit(entries.Where(Exists).ToList());
     public void Export(string path) => JsonFile.Write(path, Index(entries));
 
-    public async Task<SavedWallpaper> SaveAsync(Wallpaper wallpaper, BingClient bing, CancellationToken token)
+    public async Task<SavedWallpaper> SaveAsync(Wallpaper wallpaper, BingClient bing, CancellationToken token, string title = null)
     {
         var existing = Find(wallpaper.Id);
         if (existing != null && File.Exists(PathOf(existing)))
@@ -263,10 +273,10 @@ internal sealed class WallpaperLibrary
 
         var download = await bing.DownloadAsync(wallpaper, token);
         Directory.CreateDirectory(DirectoryPath);
-        var fileName = existing?.FileName ?? NextName(wallpaper);
+        var fileName = existing?.FileName ?? NextName(wallpaper.Date, title ?? wallpaper.Title);
         var entry = new SavedWallpaper
         {
-            Wallpaper = wallpaper,
+            Wallpaper = existing?.Wallpaper ?? wallpaper,
             FileName = fileName,
             Width = download.Width,
             Height = download.Height,
@@ -329,21 +339,21 @@ internal sealed class WallpaperLibrary
             File.Delete(staged);
     }
 
-    private string NextName(Wallpaper wallpaper)
+    private string NextName(string date, string displayTitle)
     {
         const int LegacyPathLimit = 259;
         int available = Math.Min(180, LegacyPathLimit - DirectoryPath.Length - 1);
         if (available < 40)
-            throw new PathTooLongException("Choose a shorter library directory in Settings.");
+            throw new PathTooLongException(Strings.Get("Choose a shorter library directory in Settings."));
 
         var invalid = Path.GetInvalidFileNameChars();
-        string title = new string(wallpaper.Title.Select(character =>
+        string title = new string(displayTitle.Select(character =>
             Array.IndexOf(invalid, character) >= 0 ? '_' : character).ToArray()).Trim(' ', '.');
         if (title.Length == 0)
-            title = "Bing wallpaper";
+            title = Strings.Get("Bing wallpaper");
         for (int number = 1; ; number++)
         {
-            string suffix = (number == 1 ? "" : $" ({number})") + "_" + wallpaper.Date + ".jpg";
+            string suffix = (number == 1 ? "" : $" ({number})") + "_" + date + ".jpg";
             int length = Math.Min(title.Length, available - suffix.Length);
             if (char.IsHighSurrogate(title[length - 1]))
                 length--;
@@ -378,6 +388,7 @@ internal sealed class WallpaperLibrary
         [DataMember(Name = "creditLink", Order = 11, EmitDefaultValue = false)] public string CreditLink { get; set; }
         [DataMember(Name = "downloadable", Order = 12, EmitDefaultValue = false)] public bool Downloadable { get; set; }
         [DataMember(Name = "savedAt", Order = 13, EmitDefaultValue = false)] public string SavedAt { get; set; }
+        [DataMember(Name = "customTitle", Order = 14, EmitDefaultValue = false)] public bool CustomTitle { get; set; }
 
         public IndexEntry(SavedWallpaper entry)
         {
@@ -396,6 +407,7 @@ internal sealed class WallpaperLibrary
             CreditLink = item.CopyrightLink;
             Downloadable = item.Downloadable;
             SavedAt = entry.SavedAt;
+            CustomTitle = item.CustomTitle;
         }
 
         public SavedWallpaper ToEntry() => new SavedWallpaper
@@ -403,7 +415,7 @@ internal sealed class WallpaperLibrary
             Wallpaper = new Wallpaper
             {
                 Id = Id ?? "local-" + File, Title = Title, Date = Date, Copyright = Credit,
-                BingPath = BingPath, CopyrightLink = CreditLink, Downloadable = Downloadable
+                BingPath = BingPath, CopyrightLink = CreditLink, Downloadable = Downloadable, CustomTitle = CustomTitle
             },
             FileName = File, Width = Size?.ElementAtOrDefault(0) ?? 0, Height = Size?.ElementAtOrDefault(1) ?? 0,
             Favorite = Favorite, Rotation = Rotation, Tags = Tags ?? new List<string>(), SavedAt = SavedAt, AppliedAt = AppliedAt

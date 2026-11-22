@@ -1,6 +1,5 @@
 using System;
 using System.Drawing;
-using System.Globalization;
 using System.Linq;
 using System.Windows.Forms;
 using UI = AntdUI;
@@ -9,7 +8,6 @@ namespace BingWallpapers;
 
 internal sealed partial class MainForm
 {
-    private static readonly CultureInfo English = CultureInfo.GetCultureInfo("en-US");
     private readonly ToolTip tip = new ToolTip { AutomaticDelay = 350, AutoPopDelay = 9000 };
     private UI.PageHeader chrome;
     private FramePanel shell, nowCard, searchBox, inspector, metadataBar;
@@ -36,23 +34,27 @@ internal sealed partial class MainForm
     private static void Put(Control c, int x, int y, int w, int h) =>
         c.SetBounds(S(x), S(y), Math.Max(1, S(w)), Math.Max(1, S(h)));
 
-    private void BuildUi()
+    private void InitializeWindow()
     {
         AutoScaleMode = AutoScaleMode.None;
         AutoHandDpi = false;
         var work = Screen.PrimaryScreen.WorkingArea;
         using (var canvas = CreateGraphics())
             Palette.Configure(Math.Min(canvas.DpiX / 96f, Math.Min(work.Width / 1120f, work.Height / 760f)));
-        Text = "Dayframe";
+        Text = "Dayframe " + Program.Version;
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application;
-        BackColor = Palette.Window;
-        BorderColor = Palette.Line;
-        Font = Palette.Font();
         StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
         MinimumSize = new Size(S(956), S(620));
         Size = new Size(Math.Min(work.Width, S(1280)), Math.Min(work.Height, S(860)));
+        Resize += (_, __) => PlaceUi();
+    }
 
+    private void BuildUi()
+    {
+        BackColor = Palette.Window;
+        BorderColor = Palette.Line;
+        Font = Palette.Font();
         chrome = new UI.PageHeader { BackColor = Palette.Window, ShowButton = false, EnableDoubleClickMaximize = true };
         Controls.Add(chrome);
         brandIcon = new PictureBox { Image = Palette.Icon("brand", 20, Palette.Amber), SizeMode = PictureBoxSizeMode.CenterImage };
@@ -79,7 +81,8 @@ internal sealed partial class MainForm
         desktopPreview = Add(nowCard, new PhotoView { Radius = 8 });
         nowCaption = LabelOn(nowCard, "Now showing", 11, false, Palette.Muted);
         nowTitle = LabelOn(nowCard, "No wallpaper set", 13, true);
-        nowNext = LabelOn(nowCard, "Auto-change is off", 10, false, Palette.Subtle, "JetBrains Mono");
+        nowNext = LabelOn(nowCard, "Auto-change is off", 10, false, Palette.Subtle,
+            Strings.IsChinese ? "Inter" : "JetBrains Mono");
         previous = ButtonOn(nowCard, "", "previous", 16, ButtonLook.Soft, async () => await StepAsync(-1), "Previous wallpaper");
         pause = ButtonOn(nowCard, "", "pause", 16, ButtonLook.Soft, TogglePaused, "Pause auto-change");
         next = ButtonOn(nowCard, "", "next", 16, ButtonLook.Soft, async () => await StepAsync(1), "Next wallpaper");
@@ -100,9 +103,9 @@ internal sealed partial class MainForm
         MakeSettings();
         footer = LabelOn(this, "", 11, false, Palette.Muted);
         footer.Align = StringAlignment.Far;
-        Resize += (_, __) => PlaceUi();
+        footer.Visible = false;
         PlaceUi();
-        ShowPage("today");
+        ShowPage(page);
     }
 
     private void MakeToday()
@@ -121,14 +124,14 @@ internal sealed partial class MainForm
         fit = ButtonOn(hero, "Fill", "desktop", 16, ButtonLook.Glass, ShowFitChoices);
         fit.EndGlyph = "down";
         fit.EndGlyphSize = 15;
-        heroTitle = LabelOn(hero, "Getting today’s wallpaper…", 56, false, Palette.Text, "Instrument Serif");
-        heroCredit = LabelOn(hero, "", 12, false, Palette.Text, "JetBrains Mono");
-        about = ButtonOn(hero, "About this image", "external", 16, ButtonLook.Plain, OpenAbout);
+        heroTitle = LabelOn(hero, "Getting today’s wallpaper…", 56, false, Palette.PhotoInk, "Instrument Serif");
+        heroCredit = LabelOn(hero, "", 12, false, Palette.PhotoInk, "JetBrains Mono");
+        about = ButtonOn(hero, "About this image", "external", 16, ButtonLook.PhotoLink, OpenAbout);
         favorite = ButtonOn(hero, "", "heart", 20, ButtonLook.Glass, async () => await ToggleTodayFavoriteAsync(), "Add to favorites");
         more = ButtonOn(hero, "", "more", 20, ButtonLook.Glass, ShowTodayActions, "More actions");
         apply = ButtonOn(hero, "Set as wallpaper", "desktop", 18, ButtonLook.Primary, async () => await ApplyAsync(selected));
         favorite.Radius = more.Radius = apply.Radius = 14;
-        fileHint = LabelOn(hero, "", 11, false, Palette.Text, "JetBrains Mono");
+        fileHint = LabelOn(hero, "", 11, false, Palette.PhotoInk, Strings.IsChinese ? "Inter" : "JetBrains Mono");
         fileHint.Align = StringAlignment.Far;
 
         recentTitle = LabelOn(todayPage, "Last 8 days", 23, false, Palette.Text, "Instrument Serif");
@@ -136,7 +139,7 @@ internal sealed partial class MainForm
         legendSaved = ButtonOn(todayPage, "Saved", "check", 14, ButtonLook.Plain, null);
         legendDesktop = ButtonOn(todayPage, "On desktop", "desktop", 14, ButtonLook.Plain, null);
         legendSaved.GlyphColor = Palette.Blue;
-        legendDesktop.GlyphColor = Palette.Amber;
+        legendDesktop.GlyphColor = Palette.Accent;
         foreach (var item in new[] { legendSaved, legendDesktop })
         {
             item.ForeColor = Palette.Muted;
@@ -161,7 +164,7 @@ internal sealed partial class MainForm
         search = InputOn(searchBox, "Search title or tag");
         search.BorderWidth = 0;
         search.TextChanged += (_, __) => RenderLibrary();
-        sort = ButtonOn(libraryPage, "Newest first", null, 0, ButtonLook.Outline, ShowSortChoices);
+        sort = ButtonOn(libraryPage, SortLabel(order), null, 0, ButtonLook.Outline, ShowSortChoices);
         sort.EndGlyph = "down";
         string[] filters = { "All", "Favorites", "In rotation", "Missing file" };
         libraryFilters = filters.Select((value, index) => ButtonOn(libraryPage, value, index == 3 ? "warning" : null,
@@ -182,7 +185,7 @@ internal sealed partial class MainForm
 
         metadataBar = PanelOn(libraryPage, Palette.Surface, 12, true);
         indexStatus = LabelOn(metadataBar, "", 13, true);
-        indexCount = LabelOn(metadataBar, "", 11, false, Palette.Muted, "JetBrains Mono");
+        indexCount = LabelOn(metadataBar, "", 11, false, Palette.Muted, Strings.IsChinese ? "Inter" : "JetBrains Mono");
         metadata = ButtonOn(metadataBar, "Manage metadata", "json", 16, ButtonLook.Soft, OpenMetadata);
 
         inspector = PanelOn(libraryPage, Palette.Surface, 17, true);
@@ -275,8 +278,9 @@ internal sealed partial class MainForm
         Put(apply, width - 226, height - 102, 194, 48);
         Put(fileHint, width - 394, height - 48, 362, 24);
         int stripTop = 24 + height + 17;
-        Put(recentTitle, x, stripTop, 104, 37);
-        Put(marketName, x + 101, stripTop + 3, 175, 34);
+        int recentHeadingWidth = Strings.IsChinese ? 130 : 104;
+        Put(recentTitle, x, stripTop, recentHeadingWidth, 37);
+        Put(marketName, x + recentHeadingWidth, stripTop + 3, 175, 34);
         Put(legendSaved, w - 413, stripTop + 4, 76, 30);
         Put(legendDesktop, w - 337, stripTop + 4, 105, 30);
         Put(older, w - 232, stripTop + 4, 208, 30);
@@ -350,14 +354,15 @@ internal sealed partial class MainForm
 
     internal static InkLabel LabelOn(Control parent, string text, int size = 14, bool bold = false,
         Color? color = null, string face = "Inter") =>
-        Add(parent, new InkLabel { Text = text, Font = Palette.Font(size, bold, face), ForeColor = color ?? Palette.Text });
+        Add(parent, new InkLabel { Text = Strings.Get(text), Font = Palette.Font(size, bold, face), ForeColor = color ?? Palette.Text });
 
     internal static FrameButton ButtonOn(Control parent, string text, string glyph, int glyphSize,
         ButtonLook look, Action action, string description = null)
     {
         var control = Add(parent, new FrameButton
         {
-            Text = text, Glyph = glyph, GlyphSize = glyphSize, Look = look, AccessibleName = description ?? text,
+            Text = Strings.Get(text), Glyph = glyph, GlyphSize = glyphSize, Look = look,
+            AccessibleName = Strings.Get(description ?? text),
             Font = Palette.Font(14, look == ButtonLook.Primary || look == ButtonLook.Soft)
         });
         if (action != null)
@@ -368,13 +373,14 @@ internal sealed partial class MainForm
     internal static UI.Input InputOn(Control parent, string name) =>
         Add(parent, new UI.Input
         {
-            AccessibleName = name, PlaceholderText = name, ForeColor = Palette.Text, BackColor = Palette.Canvas,
+            AccessibleName = Strings.Get(name), PlaceholderText = Strings.Get(name),
+            ForeColor = Palette.Text, BackColor = Palette.Canvas,
             BorderColor = Palette.Line, Radius = 10, Font = Palette.Font()
         });
 
     private static ToggleControl ToggleOn(Control parent, string label, Action<bool> action)
     {
-        var control = Add(parent, new ToggleControl { AccessibleName = label });
+        var control = Add(parent, new ToggleControl { AccessibleName = Strings.Get(label) });
         control.CheckedChanged += (_, __) => action(control.Checked);
         return control;
     }

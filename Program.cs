@@ -13,47 +13,68 @@ namespace BingWallpapers;
 
 internal static class Program
 {
+    public static string Version => typeof(Program).Assembly.GetName().Version.ToString(3);
+
     [STAThread]
     private static void Main(string[] args)
     {
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
-        using (var signal = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\BingWallpapers.Show"))
-        using (var instance = new Mutex(true, @"Local\BingWallpapers.Instance", out bool created))
+        bool startInTray = Array.IndexOf(args, "--tray") >= 0;
+        string signalName = @"Local\Dayframe.Show." + Version;
+        using (var instance = new Mutex(false, @"Local\BingWallpapers.Instance"))
         {
-            if (!created)
+            while (!TryEnter(instance))
             {
-                if (Array.IndexOf(args, "--tray") < 0)
-                    signal.Set();
-                return;
+                if (startInTray)
+                    return;
+                if (EventWaitHandle.TryOpenExisting(signalName, out var running))
+                {
+                    using (running) running.Set();
+                    return;
+                }
+                try { Strings.SetLanguage(Settings.Load().Language); }
+                catch (Exception error) when (error is IOException || error is UnauthorizedAccessException ||
+                    error is System.Runtime.Serialization.SerializationException)
+                {
+                    // An unreadable preference file must not stop the old-version notice.
+                }
+                if (MessageBox.Show(Strings.Get("An older version is still running in the tray. Exit it there, then choose Retry to open this version."),
+                    "Dayframe " + Version, MessageBoxButtons.RetryCancel, MessageBoxIcon.Information) != DialogResult.Retry)
+                    return;
             }
 
-            // Windows 7 can default to older TLS protocols despite supporting TLS 1.2.
-            if (Environment.OSVersion.Version <= new Version(6, 1, 7601))
-                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
-
-            using (var form = new MainForm(Array.IndexOf(args, "--tray") >= 0))
+            try
             {
-                var handle = form.Handle;
-                var registered = ThreadPool.RegisterWaitForSingleObject(signal, (_, expired) =>
+                // Windows 7 can default to older TLS protocols despite supporting TLS 1.2.
+                if (Environment.OSVersion.Version <= new Version(6, 1, 7601))
+                    ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+
+                using (var signal = new EventWaitHandle(false, EventResetMode.AutoReset, signalName))
+                using (var form = new MainForm(startInTray))
                 {
-                    if (!form.IsDisposed && form.IsHandleCreated)
+                    _ = form.Handle;
+                    var registered = ThreadPool.RegisterWaitForSingleObject(signal, (_, expired) =>
                     {
-                        try { form.BeginInvoke(new Action(form.ShowFromTray)); }
-                        catch (InvalidOperationException) when (form.IsDisposed || !form.IsHandleCreated) { }
-                    }
-                }, null, Timeout.Infinite, false);
-                try
-                {
-                    Application.Run(form);
-                }
-                finally
-                {
-                    registered.Unregister(null);
+                        if (!form.IsDisposed && form.IsHandleCreated)
+                        {
+                            try { form.BeginInvoke(new Action(form.ShowFromTray)); }
+                            catch (InvalidOperationException) when (form.IsDisposed || !form.IsHandleCreated) { }
+                        }
+                    }, null, Timeout.Infinite, false);
+                    try { Application.Run(form); }
+                    finally { registered.Unregister(null); }
                 }
             }
+            finally { instance.ReleaseMutex(); }
         }
+    }
+
+    private static bool TryEnter(Mutex instance)
+    {
+        try { return instance.WaitOne(0); }
+        catch (AbandonedMutexException) { return true; }
     }
 }
 
@@ -88,7 +109,7 @@ internal static class DesktopWallpaper
                 desktop.SetValue("WallpaperStyle", style);
                 desktop.SetValue("TileWallpaper", fit == "Tile" ? "1" : "0");
                 if (!SystemParametersInfo(SetDesktopWallpaper, 0, path, UpdateUserProfile | BroadcastChange))
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Windows could not apply this wallpaper.");
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), Strings.Get("Windows could not apply this wallpaper."));
             }
             catch
             {

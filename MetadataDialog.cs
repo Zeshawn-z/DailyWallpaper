@@ -1,7 +1,6 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -22,7 +21,7 @@ internal sealed class MetadataDialog : AntdUI.Window
     {
         this.owner = owner;
         this.library = library;
-        Text = "Metadata file";
+        Text = Strings.Get("Metadata file");
         BackColor = Palette.Canvas;
         BorderColor = Palette.Line;
         StartPosition = FormStartPosition.CenterParent;
@@ -86,7 +85,7 @@ internal sealed class MetadataDialog : AntdUI.Window
         {
             ReadOnly = true, BorderStyle = BorderStyle.None, BackColor = Palette.Canvas, ForeColor = Palette.Subtle,
             Font = Palette.Font(12, false, "JetBrains Mono"), WordWrap = false, DetectUrls = false,
-            ScrollBars = RichTextBoxScrollBars.None, AccessibleName = "Read-only JSON preview"
+            ScrollBars = RichTextBoxScrollBars.None, AccessibleName = Strings.Get("Read-only JSON preview")
         });
         Put(preview, 17, 57, 369, 265);
         Put(Button(panel, "Rebuild from folder", "refresh", 18, ButtonLook.Outline, Rebuild), 28, 526, 188, 40);
@@ -101,7 +100,7 @@ internal sealed class MetadataDialog : AntdUI.Window
     {
         var card = MainForm.PanelOn(parent, Palette.Hover, 15);
         Put(card, 28, y, 330, height);
-        var badge = MainForm.PanelOn(card, ink == Palette.Blue ? Color.FromArgb(48, 57, 52) : Palette.AmberTint, 10);
+        var badge = MainForm.PanelOn(card, ink == Palette.Blue ? Palette.BlueTint : Palette.AmberTint, 10);
         Put(badge, 13, 14, 32, 32);
         var marker = MainForm.Add(badge, new PictureBox { Image = Palette.Icon(glyph, 18, ink), SizeMode = PictureBoxSizeMode.CenterImage });
         Put(marker, 0, 0, 32, 32);
@@ -112,27 +111,28 @@ internal sealed class MetadataDialog : AntdUI.Window
     {
         int missingCount = library.Entries.Count(entry => !library.Exists(entry));
         int untrackedCount = library.UntrackedFiles().Count;
-        missingHelp.Text = missingCount > 0 ? "Files were moved or deleted outside the app." : "Every indexed image is available.";
-        untrackedHelp.Text = untrackedCount > 0 ? "They will not appear in Library until added." : "The folder and its index are in sync.";
+        missingHelp.Text = Strings.Get(missingCount > 0 ? "Files were moved or deleted outside the app." : "Every indexed image is available.");
+        untrackedHelp.Text = Strings.Get(untrackedCount > 0 ? "They will not appear in Library until added." : "The folder and its index are in sync.");
         missing.Text = missingCount switch
         {
-            0 => "No missing files",
-            1 => "1 entry points to a missing file",
-            _ => $"{missingCount} entries point to missing files"
+            0 => Strings.Get("No missing files"),
+            1 => Strings.Get("1 entry points to a missing file"),
+            _ => Strings.Format("{0} entries point to missing files", missingCount)
         };
         untracked.Text = untrackedCount switch
         {
-            0 => "All images are tracked",
-            1 => "1 image in the folder is not tracked",
-            _ => $"{untrackedCount} images in the folder are not tracked"
+            0 => Strings.Get("All images are tracked"),
+            1 => Strings.Get("1 image in the folder is not tracked"),
+            _ => Strings.Format("{0} images in the folder are not tracked", untrackedCount)
         };
         review.Enabled = remove.Enabled = missingCount > 0;
         add.Enabled = untrackedCount > 0;
         var file = new FileInfo(library.IndexPath);
         editor.Enabled = file.Exists;
-        written.Text = file.Exists ? "Last written " + file.LastWriteTime.ToString("dd MMM, HH:mm", CultureInfo.GetCultureInfo("en-US"))
-            + " · " + MainForm.FormatBytes(file.Length) : "No index written yet";
-        note.Text = File.Exists(library.BackupPath) ? "Backup kept as wallpapers.json.bak" : "Backups are created on the first edit.";
+        written.Text = file.Exists ? Strings.Format("Last written {0} · {1}",
+            Strings.Date(file.LastWriteTime, "dd MMM, HH:mm", "M月d日 HH:mm"), MainForm.FormatBytes(file.Length))
+            : Strings.Get("No index written yet");
+        note.Text = Strings.Get(File.Exists(library.BackupPath) ? "Backup kept as wallpapers.json.bak" : "Backups are created on the first edit.");
         string source;
         if (!file.Exists) source = "{\r\n  \"version\": 1,\r\n  \"items\": []\r\n}";
         else
@@ -142,14 +142,14 @@ internal sealed class MetadataDialog : AntdUI.Window
                 char[] buffer = new char[12000];
                 int length = stream.ReadBlock(buffer, 0, buffer.Length);
                 source = new string(buffer, 0, length);
-                if (!stream.EndOfStream) source += "\r\n… Open in editor to view the full index.";
+                if (!stream.EndOfStream) source += "\r\n" + Strings.Get("… Open in editor to view the full index.");
             }
         }
         preview.Text = source;
         foreach (Match token in Regex.Matches(source, @"""(?:\\.|[^""\\])*""(?<key>\s*:)?|\b(?:true|false|null|\d+)\b"))
         {
             preview.Select(token.Index, token.Length);
-            preview.SelectionColor = token.Groups["key"].Success ? Palette.Subtle : token.Value.StartsWith("\"") ? Palette.Amber : Palette.Blue;
+            preview.SelectionColor = token.Groups["key"].Success ? Palette.Subtle : token.Value.StartsWith("\"") ? Palette.Accent : Palette.Blue;
         }
         preview.Select(0, 0);
         preview.ScrollToCaret();
@@ -168,21 +168,24 @@ internal sealed class MetadataDialog : AntdUI.Window
 
     private void RemoveEntries()
     {
-        if (MessageBox.Show(this, "Remove records that point to missing files?", "Remove entries",
+        if (MessageBox.Show(this, Strings.Get("Remove records that point to missing files?"), Strings.Get("Remove entries"),
             MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.OK)
             Mutate(library.RemoveMissing);
     }
 
     private void Rebuild()
     {
-        if (MessageBox.Show(this, "Add untracked JPEGs and remove records whose files are missing? Existing image files and their metadata are kept.",
-            "Rebuild from folder", MessageBoxButtons.OKCancel, MessageBoxIcon.Information, MessageBoxDefaultButton.Button2) == DialogResult.OK)
+        if (MessageBox.Show(this, Strings.Get("Add untracked JPEGs and remove records whose files are missing? Existing image files and their metadata are kept."),
+            Strings.Get("Rebuild from folder"), MessageBoxButtons.OKCancel, MessageBoxIcon.Information, MessageBoxDefaultButton.Button2) == DialogResult.OK)
             Mutate(() => library.ImportFiles(true));
     }
 
     private void ExportIndex()
     {
-        using (var dialog = new SaveFileDialog { Filter = "JSON (*.json)|*.json", FileName = "dayframe-wallpapers.json" })
+        using (var dialog = new SaveFileDialog
+        {
+            Title = Strings.Get("Export metadata"), Filter = "JSON (*.json)|*.json", FileName = "dayframe-wallpapers.json"
+        })
         {
             if (dialog.ShowDialog(this) == DialogResult.OK)
                 Mutate(() => library.Export(dialog.FileName));

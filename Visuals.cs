@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Drawing.Text;
 using System.IO;
 using System.Linq;
@@ -12,21 +13,29 @@ namespace BingWallpapers;
 
 internal static class Palette
 {
-    public static readonly Color Window = Color.FromArgb(21, 20, 18);
-    public static readonly Color Canvas = Color.FromArgb(16, 15, 13);
-    public static readonly Color Surface = Color.FromArgb(27, 25, 22);
-    public static readonly Color Hover = Color.FromArgb(36, 33, 29);
-    public static readonly Color Raised = Color.FromArgb(46, 42, 37);
-    public static readonly Color Line = Color.FromArgb(53, 48, 42);
-    public static readonly Color Text = Color.FromArgb(242, 237, 229);
-    public static readonly Color Subtle = Color.FromArgb(182, 174, 162);
-    public static readonly Color Muted = Color.FromArgb(154, 146, 135);
+    public static bool IsLight { get; private set; }
+    public static Color Window => Themed(0x151412, 0xEEE8DF);
+    public static Color Canvas => Themed(0x100F0D, 0xFAF7F2);
+    public static Color Surface => Themed(0x1B1916, 0xFFFDF9);
+    public static Color Hover => Themed(0x24211D, 0xF3EBDE);
+    public static Color Raised => Themed(0x2E2A25, 0xEDE2D1);
+    public static Color SoftHover => Themed(0x3E372E, 0xE6D7C1);
+    public static Color Line => Themed(0x35302A, 0xDAD0C1);
+    public static Color Text => Themed(0xF2EDE5, 0x282117);
+    public static Color Subtle => Themed(0xB6AEA2, 0x524638);
+    public static Color Muted => Themed(0x9A9287, 0x6B5C4B);
+    public static Color Accent => Themed(0xF0B04A, 0x87520D);
+    public static Color AmberTint => Themed(0x342917, 0xF5E6CB);
+    public static Color AmberBorder => Themed(0x79582B, 0xBA9256);
+    public static Color Blue => Themed(0x7CC6D4, 0x176873);
+    public static Color BlueTint => Themed(0x303934, 0xE1F0ED);
+    public static Color Error => Themed(0xE8766C, 0xA63731);
     public static readonly Color Amber = Color.FromArgb(240, 176, 74);
     public static readonly Color AmberHover = Color.FromArgb(255, 193, 99);
-    public static readonly Color AmberTint = Color.FromArgb(52, 41, 23);
     public static readonly Color OnAmber = Color.FromArgb(27, 18, 6);
-    public static readonly Color Blue = Color.FromArgb(124, 198, 212);
-    public static readonly Color Error = Color.FromArgb(232, 118, 108);
+    public static readonly Color PhotoInk = Color.FromArgb(242, 237, 229);
+    public static readonly Color PhotoGlass = Color.FromArgb(16, 15, 13);
+    public static readonly Color PhotoBlue = Color.FromArgb(124, 198, 212);
 
     private static readonly PrivateFontCollection fonts = new PrivateFontCollection();
     private static readonly Dictionary<(string Face, int Pixels, bool Bold), Font> type =
@@ -35,6 +44,8 @@ internal static class Palette
         new Dictionary<(string, int, int), Bitmap>();
     public static float Scale { get; private set; } = 1;
     public static int Px(int logical) => (int)Math.Round(logical * Scale);
+    private static Color Themed(int dark, int light) =>
+        Color.FromArgb(unchecked((int)0xff000000) | (IsLight ? light : dark));
 
     public static void Configure(float scale)
     {
@@ -49,9 +60,22 @@ internal static class Palette
                     fonts.AddFontFile(font);
             }
         }
-        UI.Config.Mode = UI.TMode.Dark;
-        UI.Style.SetPrimary(Amber);
-        UI.Style.Set(UI.Colour.PrimaryColor, OnAmber);
+        ApplyTheme();
+    }
+
+    public static void SetTheme(string theme)
+    {
+        IsLight = theme == "light";
+        ApplyTheme();
+    }
+
+    private static void ApplyTheme()
+    {
+        UI.Config.Mode = IsLight ? UI.TMode.Light : UI.TMode.Dark;
+        UI.Style.SetPrimary(Accent);
+        UI.Style.Set(UI.Colour.PrimaryColor, IsLight ? Color.White : OnAmber);
+        UI.Style.Set(UI.Colour.PrimaryBg, AmberTint);
+        UI.Style.Set(UI.Colour.PrimaryBorder, AmberBorder);
         UI.Style.Set(UI.Colour.Text, Text);
         UI.Style.Set(UI.Colour.TextSecondary, Subtle);
         UI.Style.Set(UI.Colour.TextTertiary, Muted);
@@ -66,13 +90,20 @@ internal static class Palette
 
     public static Font Font(int pixels = 14, bool bold = false, string face = "Inter")
     {
+        if (Strings.IsChinese && face == "Inter")
+            face = "Microsoft YaHei UI";
+        else if (Strings.IsChinese && face == "Instrument Serif")
+            face = "SimSun";
         var key = (face, Px(pixels), bold);
         if (type.TryGetValue(key, out var font))
             return font;
-        string fallback = face == "Instrument Serif" ? "Georgia" : face == "JetBrains Mono" ? "Consolas" : "Segoe UI";
-        var family = fonts.Families.FirstOrDefault(value => value.Name == face) ?? new FontFamily(fallback);
-        var style = bold && family.IsStyleAvailable(FontStyle.Bold) ? FontStyle.Bold : FontStyle.Regular;
-        return type[key] = new Font(family, key.Item2, style, GraphicsUnit.Pixel);
+        string fallback = face == "Instrument Serif" ? "Georgia" : face == "JetBrains Mono" ? "Consolas" :
+            face == "Inter" ? "Segoe UI" : face;
+        var family = fonts.Families.FirstOrDefault(value => value.Name == face);
+        var style = bold && (family == null || family.IsStyleAvailable(FontStyle.Bold)) ? FontStyle.Bold : FontStyle.Regular;
+        return type[key] = family == null
+            ? new Font(fallback, key.Item2, style, GraphicsUnit.Pixel)
+            : new Font(family, key.Item2, style, GraphicsUnit.Pixel);
     }
 
     public static Bitmap Icon(string name, int logicalSize, Color color)
@@ -158,6 +189,14 @@ internal static class Palette
         }
         g.Restore(state);
     }
+
+    public static void PaintControlBackground(Control control, Graphics g)
+    {
+        if (control.Parent is PhotoView photo)
+            photo.PaintBackdrop(g, -control.Left, -control.Top);
+        else
+            g.Clear(control.Parent?.BackColor ?? Canvas);
+    }
 }
 
 internal sealed class InkLabel : Control
@@ -165,13 +204,17 @@ internal sealed class InkLabel : Control
     public StringAlignment Align { get; set; }
     public InkLabel()
     {
-        SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
             ControlStyles.SupportsTransparentBackColor, true);
         BackColor = Color.Transparent;
     }
     protected override void OnTextChanged(EventArgs e) { base.OnTextChanged(e); Invalidate(); }
-    protected override void OnPaint(PaintEventArgs e) =>
+    protected override void OnPaintBackground(PaintEventArgs e) { }
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        Palette.PaintControlBackground(this, e.Graphics);
         Palette.Write(e.Graphics, Text, Font, ClientRectangle, ForeColor, Align);
+    }
 }
 
 internal sealed class FramePanel : Panel
@@ -198,7 +241,7 @@ internal sealed class FramePanel : Panel
     }
 }
 
-internal enum ButtonLook { Plain, Soft, Outline, Primary, Chip, Nav, Glass, Choice }
+internal enum ButtonLook { Plain, Soft, Outline, Primary, Chip, Nav, Glass, PhotoLink, Choice }
 
 internal sealed class FrameButton : Button
 {
@@ -220,14 +263,18 @@ internal sealed class FrameButton : Button
         FlatAppearance.BorderSize = 0;
         Cursor = Cursors.Hand;
         ForeColor = Palette.Text;
-        SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
             ControlStyles.SupportsTransparentBackColor, true);
         BackColor = Color.Transparent;
     }
 
+    protected override void OnPaintBackground(PaintEventArgs e) { }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
+        // ButtonBase can skip the background paint for an owner-drawn flat button.
+        Palette.PaintControlBackground(this, g);
         g.SmoothingMode = SmoothingMode.AntiAlias;
         Color foreground = Enabled ? ForeColor : Palette.Muted;
         Color fill = Color.Transparent;
@@ -239,7 +286,7 @@ internal sealed class FrameButton : Button
                 foreground = Enabled ? Palette.OnAmber : Palette.Subtle;
                 break;
             case ButtonLook.Soft:
-                fill = hover ? Color.FromArgb(62, 55, 46) : SoftFill ?? Palette.Raised;
+                fill = hover ? Palette.SoftHover : SoftFill ?? Palette.Raised;
                 break;
             case ButtonLook.Outline:
                 fill = hover ? Palette.Hover : Palette.Canvas;
@@ -247,20 +294,26 @@ internal sealed class FrameButton : Button
                 break;
             case ButtonLook.Chip:
                 fill = Selected ? Palette.AmberTint : Palette.Hover;
-                border = Selected ? Color.FromArgb(121, 88, 43) : Palette.Line;
-                foreground = Selected ? Palette.Amber : Palette.Subtle;
+                border = Selected ? Palette.AmberBorder : Palette.Line;
+                foreground = Selected ? Palette.Accent : Palette.Subtle;
                 break;
             case ButtonLook.Nav:
                 fill = Selected || hover ? Palette.Hover : Color.Transparent;
                 foreground = Selected ? Palette.Text : Palette.Subtle;
                 break;
             case ButtonLook.Glass:
-                fill = Color.FromArgb(hover ? 218 : 155, Palette.Canvas);
-                border = Color.FromArgb(103, Palette.Subtle);
+                fill = Color.FromArgb(hover ? 218 : 155, Palette.PhotoGlass);
+                border = Color.FromArgb(103, Palette.PhotoInk);
+                foreground = Palette.PhotoInk;
+                break;
+            case ButtonLook.PhotoLink:
+                if (hover)
+                    fill = Color.FromArgb(155, Palette.PhotoGlass);
+                foreground = Palette.PhotoInk;
                 break;
             case ButtonLook.Choice:
                 fill = Selected || hover ? Palette.Hover : Color.Transparent;
-                border = Selected ? Color.FromArgb(121, 88, 43) : (Color?)null;
+                border = Selected ? Palette.AmberBorder : (Color?)null;
                 break;
             default:
                 if (hover)
@@ -268,12 +321,12 @@ internal sealed class FrameButton : Button
                 break;
         }
         if (Focused && ShowFocusCues)
-            border = Palette.Amber;
+            border = Look == ButtonLook.Glass || Look == ButtonLook.PhotoLink ? Palette.Amber : Palette.Accent;
         if (fill.A > 0 || border.HasValue)
             Palette.Box(g, new Rectangle(0, 0, Width - 1, Height - 1), fill, Radius, border);
 
         Color iconColor = Enabled ? GlyphColor ?? (Selected && (Look == ButtonLook.Nav || Look == ButtonLook.Choice)
-            ? Palette.Amber : foreground) : Palette.Muted;
+            ? Palette.Accent : foreground) : Palette.Muted;
         var icon = Palette.Icon(Glyph, GlyphSize, iconColor);
         var end = Palette.Icon(EndGlyph, EndGlyphSize, iconColor);
         if (icon == null && end == null)
@@ -314,9 +367,20 @@ internal sealed class FrameButton : Button
 internal sealed class PhotoView : Panel
 {
     private Bitmap image;
+    private Bitmap backdrop;
+    private bool contain;
     public int Radius { get; set; } = 12;
     public bool Hero { get; set; }
-    public bool Contain { get; set; }
+    public bool Contain
+    {
+        get => contain;
+        set
+        {
+            if (contain == value) return;
+            contain = value;
+            ResetBackdrop();
+        }
+    }
     public Size ImageSize => image?.Size ?? Size.Empty;
     public bool Loaded => image != null;
     public PhotoView()
@@ -328,14 +392,41 @@ internal sealed class PhotoView : Panel
     {
         image?.Dispose();
         image = value;
+        ResetBackdrop();
+    }
+
+    private void ResetBackdrop()
+    {
+        backdrop?.Dispose();
+        backdrop = null;
         Invalidate(true);
     }
-    protected override void OnPaintBackground(PaintEventArgs e)
+
+    protected override void OnSizeChanged(EventArgs e)
     {
-        e.Graphics.Clear(Parent?.BackColor ?? Palette.Canvas);
+        ResetBackdrop();
+        base.OnSizeChanged(e);
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e) => PaintBackdrop(e.Graphics, 0, 0);
+
+    internal void PaintBackdrop(Graphics target, int x, int y)
+    {
+        target.Clear(Parent?.BackColor ?? Palette.Canvas);
         if (Width < 2 || Height < 2)
             return;
-        var g = e.Graphics;
+        if (backdrop == null)
+        {
+            backdrop = new Bitmap(Width, Height, PixelFormat.Format32bppPArgb);
+            using (var g = Graphics.FromImage(backdrop))
+                DrawBackdrop(g);
+        }
+        target.DrawImageUnscaled(backdrop, x, y);
+    }
+
+    private void DrawBackdrop(Graphics g)
+    {
+        g.Clear(Parent?.BackColor ?? Palette.Canvas);
         g.SmoothingMode = SmoothingMode.AntiAlias;
         Palette.Photo(g, image, ClientRectangle, Radius, Contain);
         if (Hero)
@@ -357,7 +448,15 @@ internal sealed class PhotoView : Panel
             }
         }
     }
-    protected override void Dispose(bool disposing) { if (disposing) image?.Dispose(); base.Dispose(disposing); }
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            image?.Dispose();
+            backdrop?.Dispose();
+        }
+        base.Dispose(disposing);
+    }
 }
 
 internal sealed class PhotoTile : Button
@@ -371,15 +470,16 @@ internal sealed class PhotoTile : Button
     public bool Requested { get; set; }
     public bool Strip { get; }
     public string Caption { get; }
+    public string DisplayTitle { get; private set; }
     private Bitmap image;
 
-    public PhotoTile(Wallpaper wallpaper, SavedWallpaper entry, string caption, bool strip)
+    public PhotoTile(Wallpaper wallpaper, SavedWallpaper entry, string caption, bool strip, string displayTitle)
     {
         Wallpaper = wallpaper;
         Entry = entry;
         Strip = strip;
         Caption = caption;
-        AccessibleName = wallpaper.Title + ", " + caption;
+        SetTitle(displayTitle);
         Cursor = Cursors.Hand;
         FlatStyle = FlatStyle.Flat;
         FlatAppearance.BorderSize = 0;
@@ -387,6 +487,13 @@ internal sealed class PhotoTile : Button
     }
 
     public void SetImage(Bitmap value) { image?.Dispose(); image = value; Invalidate(); }
+
+    public void SetTitle(string title)
+    {
+        DisplayTitle = title;
+        AccessibleName = title + ", " + Caption;
+        Invalidate();
+    }
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -403,23 +510,23 @@ internal sealed class PhotoTile : Button
         {
             var edge = Rectangle.Inflate(photo, Palette.Px(3), Palette.Px(3));
             using (var frame = Palette.Round(edge, Palette.Px(Strip ? 13 : 15)))
-            using (var pen = new Pen(Palette.Amber, Palette.Px(2))) g.DrawPath(pen, frame);
+            using (var pen = new Pen(Palette.Accent, Palette.Px(2))) g.DrawPath(pen, frame);
         }
 
         string glyph = Missing ? "warning" : OnDesktop ? "desktop" : Entry?.Favorite == true ? "heart" : Strip && Saved ? "check" : null;
         if (glyph != null)
         {
             var marker = new Rectangle(photo.Right - Palette.Px(25), photo.Top + Palette.Px(6), Palette.Px(20), Palette.Px(20));
-            Palette.Box(g, marker, Color.FromArgb(206, Palette.Canvas), 10);
-            var badge = Palette.Icon(glyph, 12, glyph == "check" ? Palette.Blue : Palette.Amber);
+            Palette.Box(g, marker, Color.FromArgb(206, Palette.PhotoGlass), 10);
+            var badge = Palette.Icon(glyph, 12, glyph == "check" ? Palette.PhotoBlue : Palette.Amber);
             g.DrawImageUnscaled(badge, marker.Left + (marker.Width - badge.Width) / 2, marker.Top + (marker.Height - badge.Height) / 2);
         }
         if (!Strip)
-            Palette.Write(g, Wallpaper.Title, Palette.Font(13, true), new Rectangle(px, photo.Bottom + Palette.Px(6),
+            Palette.Write(g, DisplayTitle, Palette.Font(13, true), new Rectangle(px, photo.Bottom + Palette.Px(6),
                 photo.Width, Palette.Px(18)), Palette.Text);
-        Palette.Write(g, Caption, Strip ? Palette.Font(11, Selected, "JetBrains Mono") : Palette.Font(12),
+        Palette.Write(g, Caption, Strip ? Palette.Font(11, Selected, Strings.IsChinese ? "Inter" : "JetBrains Mono") : Palette.Font(12),
             new Rectangle(px, photo.Bottom + Palette.Px(Strip ? 7 : 23), photo.Width, Palette.Px(17)),
-            Strip && Selected ? Palette.Amber : Palette.Muted);
+            Strip && Selected ? Palette.Accent : Palette.Muted);
     }
     protected override void OnGotFocus(EventArgs e) { base.OnGotFocus(e); Invalidate(); }
     protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); Invalidate(); }
@@ -431,14 +538,16 @@ internal sealed class ToggleControl : CheckBox
     public ToggleControl()
     {
         Cursor = Cursors.Hand;
-        SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer |
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
             ControlStyles.SupportsTransparentBackColor, true);
         BackColor = Color.Transparent;
     }
     protected override void OnCheckedChanged(EventArgs e) { base.OnCheckedChanged(e); Invalidate(); }
+    protected override void OnPaintBackground(PaintEventArgs e) { }
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
+        Palette.PaintControlBackground(this, g);
         g.SmoothingMode = SmoothingMode.AntiAlias;
         Palette.Box(g, new Rectangle(0, 0, Width - 1, Height - 1), Checked ? Palette.Amber : Palette.Raised,
             12, Focused && ShowFocusCues ? Palette.Blue : (Color?)null);

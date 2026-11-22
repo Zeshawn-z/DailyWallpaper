@@ -20,20 +20,17 @@ namespace BingWallpapers;
 
 internal sealed class BingClient : IDisposable
 {
-    private readonly Uri origin;
-    private readonly Uri archive;
     private readonly string market;
     private static readonly Regex ImagePath = new Regex(@"^/th\?id=OHR\.[a-zA-Z0-9._-]+$");
     private static string CacheDirectory => Path.Combine(Settings.Profile, "cache");
-    private string FeedPath => Path.Combine(CacheDirectory, market == "zh-CN" ? "feed.json" : "feed-en-US.json");
+    private static string FeedPath(string market) =>
+        Path.Combine(CacheDirectory, market == "zh-CN" ? "feed.json" : "feed-en-US.json");
     private readonly HttpClient http;
     private readonly SemaphoreSlim imageSlots = new SemaphoreSlim(3);
 
     public BingClient(Settings settings)
     {
         market = settings.Market;
-        origin = new Uri(market == "zh-CN" ? "https://cn.bing.com/" : "https://www.bing.com/");
-        archive = new Uri(origin, "HPImageArchive.aspx?format=js&idx=0&n=8&mkt=" + market);
         var handler = new HttpClientHandler
         {
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
@@ -48,7 +45,7 @@ internal sealed class BingClient : IDisposable
             Timeout = TimeSpan.FromSeconds(18),
             MaxResponseContentBufferSize = 24 * 1024 * 1024
         };
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("Dayframe/2.0");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("Dayframe/" + Program.Version);
     }
 
     public static Uri ParseProxy(string address)
@@ -58,44 +55,51 @@ internal sealed class BingClient : IDisposable
         if (!Uri.TryCreate(address, UriKind.Absolute, out var uri) || uri.Scheme != "http" ||
             uri.HostNameType == UriHostNameType.Unknown || uri.Port <= 0 ||
             uri.AbsolutePath != "/" || uri.Query.Length > 0 || uri.Fragment.Length > 0 || uri.UserInfo.Length > 0)
-            throw new ArgumentException("Enter an HTTP proxy address, for example 127.0.0.1:7890.");
+            throw new ArgumentException(Strings.Get("Enter an HTTP proxy address, for example 127.0.0.1:7890."));
         return uri;
     }
 
-    public List<Wallpaper> CachedFeed() => JsonFile.Read<List<Wallpaper>>(FeedPath);
+    public List<Wallpaper> CachedFeed() => CachedFeed(market);
+    public static List<Wallpaper> CachedFeed(string market) => JsonFile.Read<List<Wallpaper>>(FeedPath(market));
 
     public static TimeZoneInfo MarketZone(string market) =>
         TimeZoneInfo.FindSystemTimeZoneById(market == "zh-CN" ? "China Standard Time" : "Pacific Standard Time");
 
     public async Task<List<Wallpaper>> FetchFeedAsync(CancellationToken token)
     {
+        var images = await FetchArchiveAsync(market, 0, token).ConfigureAwait(false);
+        if (images.Count == 0)
+            throw new InvalidDataException(Strings.Get("Bing returned no wallpapers."));
+        token.ThrowIfCancellationRequested();
+        JsonFile.Write(FeedPath(market), images);
+        foreach (var path in Directory.EnumerateFiles(CacheDirectory, "*.jpg"))
+        {
+            if (File.GetLastWriteTimeUtc(path) < DateTime.UtcNow.AddDays(-14))
+                File.Delete(path);
+        }
+        return images;
+    }
+
+    public async Task<List<Wallpaper>> FetchArchiveAsync(string sourceMarket, int offset, CancellationToken token)
+    {
+        string host = sourceMarket == "zh-CN" ? "https://cn.bing.com/" : "https://www.bing.com/";
+        var archive = new Uri($"{host}HPImageArchive.aspx?format=js&idx={offset}&n=8&mkt={sourceMarket}");
         using (var response = await http.GetAsync(archive, token).ConfigureAwait(false))
         {
             response.EnsureSuccessStatusCode();
             using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
             {
                 var data = (ArchiveResponse)new DataContractJsonSerializer(typeof(ArchiveResponse)).ReadObject(stream);
-                var images = data?.Images?.Where(image => image != null).Select(ParseEntry)
+                return data?.Images?.Where(image => image != null).Select(image => ParseEntry(image, sourceMarket))
                     .Where(image => image != null)
                     .GroupBy(image => image.Id).Select(group => group.First())
                     .OrderByDescending(image => image.Date, StringComparer.Ordinal)
-                    .Take(8).ToList();
-                if (images == null || images.Count == 0)
-                    throw new InvalidDataException("Bing returned no wallpapers.");
-
-                token.ThrowIfCancellationRequested();
-                JsonFile.Write(FeedPath, images);
-                foreach (var path in Directory.EnumerateFiles(CacheDirectory, "*.jpg"))
-                {
-                    if (File.GetLastWriteTimeUtc(path) < DateTime.UtcNow.AddDays(-14))
-                        File.Delete(path);
-                }
-                return images;
+                    .Take(8).ToList() ?? new List<Wallpaper>();
             }
         }
     }
 
-    private Wallpaper ParseEntry(ArchiveImage image)
+    private static Wallpaper ParseEntry(ArchiveImage image, string market)
     {
         if (image.UrlBase == null || !ImagePath.IsMatch(image.UrlBase))
             return null;
@@ -188,7 +192,7 @@ internal sealed class BingClient : IDisposable
     public async Task<Download> DownloadAsync(Wallpaper wallpaper, CancellationToken token)
     {
         if (!wallpaper.Downloadable)
-            throw new InvalidOperationException("This image is unavailable for download from Bing.");
+            throw new InvalidOperationException(Strings.Get("This image is unavailable for download from Bing."));
 
         var bytes = await GetImageAsync(wallpaper, "UHD", token).ConfigureAwait(false);
         using (var stream = new MemoryStream(bytes))
@@ -199,7 +203,7 @@ internal sealed class BingClient : IDisposable
     private async Task<byte[]> GetImageAsync(Wallpaper wallpaper, string size, CancellationToken token)
     {
         if (wallpaper.BingPath == null || !ImagePath.IsMatch(wallpaper.BingPath))
-            throw new InvalidDataException("Invalid Bing image address.");
+            throw new InvalidDataException(Strings.Get("Invalid Bing image address."));
         Uri host = wallpaper.BingPath.Contains("_ZH-CN") ? new Uri("https://cn.bing.com/") : new Uri("https://www.bing.com/");
         Uri url = new Uri(host, wallpaper.BingPath + "_" + size + ".jpg");
         using (var response = await http.GetAsync(url, token).ConfigureAwait(false))
@@ -210,7 +214,7 @@ internal sealed class BingClient : IDisposable
             response.EnsureSuccessStatusCode();
             byte[] bytes = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
             if (bytes.Length < 4 || bytes[0] != 0xff || bytes[1] != 0xd8)
-                throw new InvalidDataException("Bing did not return a JPEG image.");
+                throw new InvalidDataException(Strings.Get("Bing did not return a JPEG image."));
             return bytes;
         }
     }

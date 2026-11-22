@@ -145,7 +145,7 @@ internal sealed partial class MainForm
         {
             Minimum = 1, Maximum = 10080, ShowControl = false, TextAlign = HorizontalAlignment.Center,
             BackColor = Palette.Canvas, BorderColor = Palette.Line, ForeColor = Palette.Text, Radius = 12,
-            AccessibleName = description, Font = Palette.Font(36, false, "Instrument Serif")
+            AccessibleName = Strings.Get(description), Font = Palette.Font(36, false, "Instrument Serif")
         });
         number.LostFocus += (_, __) => CommitSchedule();
         number.KeyDown += (_, e) =>
@@ -245,12 +245,12 @@ internal sealed partial class MainForm
     {
         bool random = settings.RotationMode == "random", fixedMode = settings.RotationMode == "fixed";
         scheduleMode = settings.RotationMode;
-        intervalIntro.Text = random ? "Change at random, between" : fixedMode ? "Change every" :
-            "Apply the new Bing image when it becomes available in the selected market.";
+        intervalIntro.Text = Strings.Get(random ? "Change at random, between" : fixedMode ? "Change every" :
+            "Apply the new Bing image when it becomes available in the selected market.");
         interval.Visible = fixedMode;
         minInterval.Visible = maxInterval.Visible = andLabel.Visible = maxUnit.Visible = range.Visible = random;
         minUnit.Visible = random || fixedMode;
-        minUnit.Text = random ? "min" : "minutes";
+        minUnit.Text = Strings.Get(random ? "min" : "minutes");
         for (int i = 0; i < presets.Length; i++)
         {
             presets[i].Visible = fixedMode;
@@ -267,8 +267,10 @@ internal sealed partial class MainForm
         range.Low = settings.RandomMinimum;
         range.High = settings.RandomMaximum;
         range.Invalidate();
-        timesHint.Text = random ? $"random, averages about {(settings.RandomMinimum + settings.RandomMaximum + 1) / 2} min"
-            : fixedMode ? $"every {settings.Interval} min on the dot" : "every day in the selected Bing market";
+        timesHint.Text = random ? Strings.Format("random, averages about {0} min",
+            (settings.RandomMinimum + settings.RandomMaximum + 1) / 2)
+            : fixedMode ? Strings.Format("every {0} min on the dot", settings.Interval)
+            : Strings.Get("every day in the selected Bing market");
         var all = library?.Entries.Count(entry => entry.Rotation && library.Exists(entry)) ?? 0;
         var hearts = library?.Entries.Count(entry => entry.Favorite && entry.Rotation && library.Exists(entry)) ?? 0;
         int selectedPool = settings.Pool == "bing" ? 2 : settings.Pool == "favorites" ? 1 : 0;
@@ -277,13 +279,13 @@ internal sealed partial class MainForm
             pools[i].Selected = i == selectedPool;
             pools[i].Glyph = i == selectedPool ? "radio-on" : "radio";
             pools[i].GlyphSize = 20;
-            pools[i].GlyphColor = i == selectedPool ? Palette.Amber : Palette.Muted;
+            pools[i].GlyphColor = i == selectedPool ? Palette.Accent : Palette.Muted;
             pools[i].Enabled = settings.RotationMode != "daily";
             pools[i].Invalidate();
         }
-        pools[0].Subtitle = $"{all} wallpaper{(all == 1 ? "" : "s")}";
-        pools[1].Subtitle = $"{hearts} wallpaper{(hearts == 1 ? "" : "s")}";
-        pools[2].Subtitle = "New ones are downloaded when needed";
+        pools[0].Subtitle = Strings.Format(all == 1 ? "{0} wallpaper" : "{0} wallpapers", all);
+        pools[1].Subtitle = Strings.Format(hearts == 1 ? "{0} wallpaper" : "{0} wallpapers", hearts);
+        pools[2].Subtitle = Strings.Get("New ones are downloaded when needed");
         PlaceUi();
     }
 
@@ -294,23 +296,24 @@ internal sealed partial class MainForm
         var now = DateTimeOffset.Now;
         DateTimeOffset? due = plan.Times.Count > 0 ? plan.Times[0] : (DateTimeOffset?)null;
         bool pausedNow = IsPaused(now);
-        string hint = settings.RotationEnabled != true ? "Auto-change is off" : pausedNow
-            ? "Auto-change is paused" : WaitingForPower() ? "Paused on battery power" :
-            due.HasValue ? $"Next change in {Math.Max(1, (int)Math.Ceiling((due.Value - now).TotalMinutes))} min" : "Waiting for schedule";
+        string hint = settings.RotationEnabled != true ? Strings.Get("Auto-change is off") : pausedNow
+            ? Strings.Get("Auto-change is paused") : WaitingForPower() ? Strings.Get("Paused on battery power") :
+            due.HasValue ? Strings.Format("Next change in {0} min", Math.Max(1, (int)Math.Ceiling((due.Value - now).TotalMinutes)))
+                : Strings.Get("Waiting for schedule");
         nowNext.Text = hint;
-        masterTitle.Text = settings.RotationEnabled == true ? "Auto-change is on" : "Auto-change is off";
-        masterHint.Text = settings.RotationEnabled == true ? hint : "Enable to start a schedule";
+        masterTitle.Text = Strings.Get(settings.RotationEnabled == true ? "Auto-change is on" : "Auto-change is off");
+        masterHint.Text = settings.RotationEnabled == true ? hint : Strings.Get("Enable to start a schedule");
         var remaining = due.HasValue && !pausedNow ? due.Value - now : TimeSpan.Zero;
         countdown.Text = remaining.TotalHours >= 1 ? $"{(int)remaining.TotalHours}:{remaining.Minutes:00}:{remaining.Seconds:00}"
             : remaining.TotalSeconds > 0 ? $"{remaining.Minutes:00}:{remaining.Seconds:00}" : "—";
         countdown.Progress = due.HasValue && !pausedNow
             ? Math.Min(1, Math.Max(0, remaining.TotalSeconds / Math.Max(1, (due.Value - plan.Started).TotalSeconds))) : 0;
         countdown.Invalidate();
-        nextTime.Text = due.HasValue && !pausedNow ? due.Value.ToLocalTime().ToString("HH:mm", English) : "—";
-        nextDate.Text = due.HasValue && !pausedNow ? due.Value.ToLocalTime().ToString("ddd d MMM", English) : "";
-        nextItemTitle.Text = queued?.Title ?? "No wallpaper queued";
+        nextTime.Text = due.HasValue && !pausedNow ? due.Value.LocalDateTime.ToString("HH:mm", Strings.Culture) : "—";
+        nextDate.Text = due.HasValue && !pausedNow ? Strings.Date(due.Value.LocalDateTime, "ddd d MMM", "M月d日 ddd") : "";
+        nextItemTitle.Text = TitleFor(queued) ?? Strings.Get("No wallpaper queued");
         pause.Glyph = pausedNow || settings.RotationEnabled != true ? "next" : "pause";
-        pause.AccessibleName = pausedNow ? "Resume auto-change" : "Pause auto-change";
+        pause.AccessibleName = Strings.Get(pausedNow ? "Resume auto-change" : "Pause auto-change");
         pause.Invalidate();
         timeline.Times = plan.Times;
         timeline.Last = settings.History.FirstOrDefault()?.At;
@@ -321,11 +324,12 @@ internal sealed partial class MainForm
     {
         Cancel(ref historyRequest);
         historyRequest = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        UpdateHistoryTitles();
         for (int i = 0; i < historyNames.Length; i++)
         {
             var entry = settings.History.ElementAtOrDefault(i);
-            historyTimes[i].Text = DateTimeOffset.TryParse(entry?.At, out var time) ? time.ToLocalTime().ToString("HH:mm", English) : "";
-            historyNames[i].Text = entry?.Title ?? (i == 0 ? "No changes yet" : "");
+            historyTimes[i].Text = DateTimeOffset.TryParse(entry?.At, out var time) ?
+                time.LocalDateTime.ToString("HH:mm", Strings.Culture) : "";
             historyPhotos[i].Visible = entry != null;
             historyPhotos[i].SetImage(null);
             var item = FindWallpaper(entry?.Id);
@@ -334,22 +338,31 @@ internal sealed partial class MainForm
         }
     }
 
+    private void UpdateHistoryTitles()
+    {
+        for (int i = 0; i < historyNames.Length; i++)
+            historyNames[i].Text = TitleFor(settings.History.ElementAtOrDefault(i)) ??
+                (i == 0 ? Strings.Get("No changes yet") : "");
+    }
+
     private sealed class Countdown : Control
     {
         public double Progress { get; set; }
         public Countdown()
         {
-            SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer |
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
                 ControlStyles.SupportsTransparentBackColor, true);
             BackColor = Color.Transparent;
         }
+        protected override void OnPaintBackground(PaintEventArgs e) { }
         protected override void OnPaint(PaintEventArgs e)
         {
+            Palette.PaintControlBackground(this, e.Graphics);
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             int inset = S(6);
             var circle = new Rectangle(inset, inset, Width - 2 * inset, Height - 2 * inset);
             using (var track = new Pen(Palette.Raised, S(6)))
-            using (var active = new Pen(Palette.Amber, S(6)) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            using (var active = new Pen(Palette.Accent, S(6)) { StartCap = LineCap.Round, EndCap = LineCap.Round })
             {
                 e.Graphics.DrawEllipse(track, circle);
                 if (Progress > 0)
@@ -365,13 +378,15 @@ internal sealed partial class MainForm
         public string Last { get; set; }
         public ScheduleTimeline()
         {
-            SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer |
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
                 ControlStyles.SupportsTransparentBackColor, true);
             BackColor = Color.Transparent;
         }
+        protected override void OnPaintBackground(PaintEventArgs e) { }
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
+            Palette.PaintControlBackground(this, g);
             g.SmoothingMode = SmoothingMode.AntiAlias;
             int edge = S(14), y = S(13);
             using (var pen = new Pen(Palette.Raised, S(2))) g.DrawLine(pen, edge, y, Width - edge, y);
@@ -392,9 +407,9 @@ internal sealed partial class MainForm
                     g.FillEllipse(fill, x - radius, y - radius, radius * 2, radius * 2);
                     g.DrawEllipse(edgePen, x - radius, y - radius, radius * 2, radius * 2);
                 }
-                Palette.Write(g, dates[i].ToLocalTime().ToString("HH:mm", English), Palette.Font(10, i == 1, "JetBrains Mono"),
+                Palette.Write(g, dates[i].LocalDateTime.ToString("HH:mm", Strings.Culture), Palette.Font(10, i == 1, "JetBrains Mono"),
                     new Rectangle(Math.Max(0, Math.Min(Width - S(39), x - S(20))), y + S(10), S(39), S(15)),
-                    i == 1 ? Palette.Amber : Palette.Muted, StringAlignment.Center);
+                    i == 1 ? Palette.Accent : Palette.Muted, StringAlignment.Center);
             }
         }
     }
@@ -411,20 +426,22 @@ internal sealed partial class MainForm
 
         public RangeTrack()
         {
-            SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer |
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
                 ControlStyles.SupportsTransparentBackColor, true);
             BackColor = Color.Transparent;
             Cursor = Cursors.Hand;
-            AccessibleName = "Random interval range";
+            AccessibleName = Strings.Get("Random interval range");
         }
 
+        protected override void OnPaintBackground(PaintEventArgs e) { }
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
+            Palette.PaintControlBackground(this, g);
             g.SmoothingMode = SmoothingMode.AntiAlias;
             int y = S(20);
             using (var track = new Pen(Palette.Raised, S(4)))
-            using (var active = new Pen(Palette.Amber, S(4)))
+            using (var active = new Pen(Palette.Accent, S(4)))
             {
                 g.DrawLine(track, X(0), y, X(Limit), y);
                 g.DrawLine(active, X(Low), y, X(High), y);
@@ -432,7 +449,7 @@ internal sealed partial class MainForm
             foreach (int value in new[] { Low, High })
             {
                 int r = S(8);
-                using (var edge = new Pen(Palette.Amber, S(3)))
+                using (var edge = new Pen(Palette.Accent, S(3)))
                 using (var fill = new SolidBrush(Palette.Text))
                 {
                     g.FillEllipse(fill, X(value) - r, y - r, 2 * r, 2 * r);
@@ -440,7 +457,8 @@ internal sealed partial class MainForm
                 }
             }
             for (int i = 0; i < 5; i++)
-                Palette.Write(g, (i * Limit / 4) + (i == 4 ? " min" : ""), Palette.Font(10, false, "JetBrains Mono"),
+                Palette.Write(g, i == 4 ? Strings.Format("{0} min", Limit) : (i * Limit / 4).ToString(Strings.Culture),
+                    Palette.Font(10, false, Strings.IsChinese ? "Inter" : "JetBrains Mono"),
                     new Rectangle(Math.Max(0, X(i * Limit / 4) - S(i == 4 ? 39 : 9)), S(33), S(44), S(21)), Palette.Muted);
         }
         protected override void OnMouseDown(MouseEventArgs e)

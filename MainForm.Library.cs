@@ -23,38 +23,43 @@ internal sealed partial class MainForm
         var hits = (libraryFilter == 1 ? all.Where(entry => entry.Favorite) :
             libraryFilter == 2 ? present.Where(entry => entry.Rotation) :
             libraryFilter == 3 ? missing : all).Where(entry => query.Length == 0 ||
+                TitleFor(entry.Wallpaper).IndexOf(query, StringComparison.CurrentCultureIgnoreCase) >= 0 ||
                 entry.Wallpaper.Title.IndexOf(query, StringComparison.CurrentCultureIgnoreCase) >= 0 ||
                 entry.Tags.Any(tag => tag.IndexOf(query, StringComparison.CurrentCultureIgnoreCase) >= 0) ||
                 entry.Wallpaper.Date.Contains(query.Replace(".", "").Replace("-", "")));
         var ordered = order == 1 ? hits.OrderBy(entry => entry.Wallpaper.Date, StringComparer.Ordinal)
-            : order == 2 ? hits.OrderBy(entry => entry.Wallpaper.Title, StringComparer.CurrentCultureIgnoreCase)
+            : order == 2 ? hits.OrderBy(entry => TitleFor(entry.Wallpaper), StringComparer.Create(Strings.Culture, true))
             : hits.OrderByDescending(entry => entry.Wallpaper.Date, StringComparer.Ordinal);
         var visible = ordered.ToList();
-        libraryStats.Text = $"{all.Count} wallpapers · {FormatBytes(present.Sum(entry => library.Bytes(entry)))}";
+        libraryStats.Text = Strings.Format(all.Count == 1 ? "{0} wallpaper" : "{0} wallpapers", all.Count) +
+            " · " + FormatBytes(present.Sum(entry => library.Bytes(entry)));
         int[] counts = { all.Count, all.Count(item => item.Favorite), present.Count(item => item.Rotation), missing.Count };
         string[] categories = { "All", "Favorites", "In rotation", "Missing file" };
         for (int i = 0; i < libraryFilters.Length; i++)
         {
-            libraryFilters[i].Text = $"{categories[i]} · {counts[i]}";
+            libraryFilters[i].Text = $"{Strings.Get(categories[i])} · {counts[i]}";
             libraryFilters[i].Selected = i == libraryFilter;
             libraryFilters[i].Invalidate();
         }
         int issues = missing.Count + (library?.UntrackedFiles().Count ?? 0);
-        indexStatus.Text = issues == 0 ? "Metadata is up to date" : $"{issues} metadata issue{(issues == 1 ? "" : "s")}";
-        indexStatus.ForeColor = issues == 0 ? Palette.Blue : Palette.Amber;
-        indexCount.Text = $"wallpapers.json · {all.Count} entries";
+        indexStatus.Text = issues == 0 ? Strings.Get("Metadata is up to date") :
+            Strings.Format(issues == 1 ? "{0} metadata issue" : "{0} metadata issues", issues);
+        indexStatus.ForeColor = issues == 0 ? Palette.Blue : Palette.Accent;
+        indexCount.Text = Strings.Format("wallpapers.json · {0} entries", all.Count);
         metadata.Enabled = library != null;
 
         gallery.SuspendLayout();
         foreach (var tile in gallery.Controls.OfType<PhotoTile>().ToArray())
             tile.Dispose();
         gallery.AutoScrollPosition = Point.Empty;
-        galleryEmpty.Text = library == null ? "Library unavailable. Check the folder in Settings." :
-            query.Length > 0 ? "No matching wallpapers" : libraryFilter == 0 ? "Set a Bing wallpaper to start your library." : "No wallpapers in this filter";
+        galleryEmpty.Text = Strings.Get(library == null ? "Library unavailable. Check the folder in Settings." :
+            query.Length > 0 ? "No matching wallpapers" : libraryFilter == 0 ?
+                "Set a Bing wallpaper to start your library." : "No wallpapers in this filter");
         galleryEmpty.Visible = visible.Count == 0;
         foreach (var entry in visible)
         {
-            var tile = new PhotoTile(entry.Wallpaper, entry, entry.Wallpaper.Day.ToString("d MMM yyyy", English), false)
+            var tile = new PhotoTile(entry.Wallpaper, entry, Strings.Date(entry.Wallpaper.Day, "d MMM yyyy", "yyyy年M月d日"),
+                false, TitleFor(entry.Wallpaper))
             {
                 OnDesktop = entry.Wallpaper.Id == settings.CurrentId,
                 Missing = missing.Contains(entry), Margin = new Padding(0, 0, S(12), S(10))
@@ -105,13 +110,13 @@ internal sealed partial class MainForm
         Cancel(ref inspectorRequest);
         libraryPreview.SetImage(null);
         editingDetails = true;
-        editTitle.Text = entry?.Wallpaper.Title ?? "";
-        detailDate.Text = entry?.Wallpaper.Day.ToString("ddd, d MMM yyyy", English) ?? "—";
+        editTitle.Text = TitleFor(entry?.Wallpaper) ?? "";
+        detailDate.Text = entry == null ? "—" : Strings.Date(entry.Wallpaper.Day, "ddd, d MMM yyyy", "yyyy年M月d日");
         detailSize.Text = entry == null ? "—" : $"{entry.Width} × {entry.Height} · {FormatBytes(library.Bytes(entry))}";
         detailCredit.Text = string.IsNullOrWhiteSpace(entry?.Wallpaper.Copyright) ? "—" : Attribution(entry.Wallpaper);
         tip.SetToolTip(detailCredit, entry?.Wallpaper.Copyright ?? "");
         detailApplied.Text = DateTimeOffset.TryParse(entry?.AppliedAt, out var applied)
-            ? applied.ToLocalTime().ToString("ddd d MMM, HH:mm", English) : "—";
+            ? Strings.Date(applied.LocalDateTime, "ddd d MMM, HH:mm", "M月d日 HH:mm") : "—";
         savedName.Text = entry?.FileName ?? "—";
         tip.SetToolTip(savedName, savedName.Text);
         savedFavorite.Checked = entry?.Favorite == true;
@@ -133,7 +138,9 @@ internal sealed partial class MainForm
             return;
         foreach (var name in savedEntry.Tags)
         {
-            var chip = ButtonOn(tags, name, null, 0, ButtonLook.Chip, null);
+            var chip = ButtonOn(tags, "", null, 0, ButtonLook.Chip, null);
+            chip.Text = name;
+            chip.AccessibleName = name;
             chip.Click += (_, __) => Popup(chip, ("Remove tag", () => ChangeEntry(item => item.With(
                 tags: item.Tags.Where(tag => tag != name).ToList()))));
             chip.Size = new Size(S(Math.Min(130, Math.Max(46, 22 + name.Length * 7))), S(30));
@@ -156,15 +163,15 @@ internal sealed partial class MainForm
 
     private void CommitTitle()
     {
-        if (savedEntry == null || editingDetails || quitting)
+        if (!ready || savedEntry == null || editingDetails || quitting)
             return;
         string title = editTitle.Text.Trim();
         if (title.Length == 0)
         {
-            editTitle.Text = savedEntry.Wallpaper.Title;
+            editTitle.Text = TitleFor(savedEntry.Wallpaper);
             return;
         }
-        if (title != savedEntry.Wallpaper.Title)
+        if (title != TitleFor(savedEntry.Wallpaper))
             ChangeEntry(entry => entry.With(title: title));
     }
 
@@ -191,8 +198,8 @@ internal sealed partial class MainForm
         var entry = savedEntry;
         if (entry == null || changing)
             return;
-        if (MessageBox.Show(this, $"Remove \"{entry.Wallpaper.Title}\" from Library and delete its local file?",
-            "Remove wallpaper", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning,
+        if (MessageBox.Show(this, Strings.Format("Remove \"{0}\" from Library and delete its local file?", TitleFor(entry.Wallpaper)),
+            Strings.Get("Remove wallpaper"), MessageBoxButtons.OKCancel, MessageBoxIcon.Warning,
             MessageBoxDefaultButton.Button2) != DialogResult.OK || changing)
             return;
         Attempt(() =>
@@ -205,15 +212,15 @@ internal sealed partial class MainForm
         });
     }
 
-    private void ShowSortChoices() => Popup(sort, ("Newest first", () => ChangeSort(0, "Newest first")),
-        ("Oldest first", () => ChangeSort(1, "Oldest first")), ("Title A–Z", () => ChangeSort(2, "Title A–Z")));
+    private static string SortLabel(int index) => new[] { "Newest first", "Oldest first", "Title A–Z" }[index];
 
-    private void ChangeSort(int index, string label)
-    {
-        order = index;
-        sort.Text = label;
-        RenderLibrary(savedEntry?.Wallpaper.Id);
-    }
+    private void ShowSortChoices() => Popup(sort, Enumerable.Range(0, 3)
+        .Select(index => (SortLabel(index), (Action)(() =>
+        {
+            order = index;
+            sort.Text = Strings.Get(SortLabel(index));
+            RenderLibrary(savedEntry?.Wallpaper.Id);
+        }))).ToArray());
 
     private void OpenMetadata()
     {
@@ -237,7 +244,7 @@ internal sealed partial class MainForm
     {
         using (var dialog = new Form
         {
-            Text = title, FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false,
+            Text = Strings.Get(title), FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false,
             ShowInTaskbar = false, StartPosition = FormStartPosition.CenterParent, BackColor = Palette.Surface,
             ClientSize = new Size(S(375), S(150))
         })

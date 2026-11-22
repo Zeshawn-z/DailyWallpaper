@@ -20,7 +20,9 @@ internal sealed partial class MainForm : AntdUI.Window
     private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
     private readonly Timer wallpaperTimer = new Timer(), clock = new Timer { Interval = 1000 };
     private readonly NotifyIcon tray;
-    private readonly ContextMenuStrip trayMenu;
+    private ContextMenuStrip trayMenu;
+    private readonly BingTitles titles = new BingTitles();
+    private BingClient titleRequest;
     private Settings settings;
     private WallpaperLibrary library;
     private BingClient bing;
@@ -36,11 +38,11 @@ internal sealed partial class MainForm : AntdUI.Window
 
     public MainForm(bool startHidden)
     {
-        BuildUi();
         string startupIssue = null;
         try
         {
             settings = Settings.Load();
+            Strings.SetLanguage(settings.Language);
             Validate(settings);
         }
         catch (Exception error) when (Operational(error))
@@ -48,19 +50,24 @@ internal sealed partial class MainForm : AntdUI.Window
             startupIssue = error.Message;
             settings = new Settings();
         }
+        Strings.SetLanguage(settings.Language);
+        Palette.SetTheme(settings.Theme);
+        InitializeWindow();
+        BuildUi();
         try { library = new WallpaperLibrary(settings.LibraryDirectory); }
         catch (Exception error) when (Operational(error)) { startupIssue = error.Message; }
         bing = new BingClient(settings);
-        try { recent = GetCached(); }
+        try
+        {
+            recent = GetCached();
+            titles.Load();
+            titles.Add(recent);
+            titles.Add(BingClient.CachedFeed(settings.Market == "zh-CN" ? "en-US" : "zh-CN") ?? new List<Wallpaper>());
+        }
         catch (Exception error) when (Operational(error)) { startupIssue = error.Message; }
 
-        trayMenu = MakeMenu();
-        trayMenu.Items.Add("Open Dayframe", null, (_, __) => ShowFromTray());
-        trayMenu.Items.Add("Next wallpaper", null, async (_, __) => await ChangeNowAsync());
-        trayMenu.Items.Add("Pause / resume auto-change", null, (_, __) => TogglePaused());
-        trayMenu.Items.Add(new ToolStripSeparator());
-        trayMenu.Items.Add("Exit", null, (_, __) => { quitting = true; Close(); });
-        tray = new NotifyIcon { Text = "Dayframe", Icon = Icon, Visible = true, ContextMenuStrip = trayMenu };
+        tray = new NotifyIcon { Text = "Dayframe " + Program.Version, Icon = Icon, Visible = true };
+        RebuildTrayMenu();
         tray.DoubleClick += (_, __) => ShowFromTray();
         wallpaperTimer.Tick += async (_, __) => await OnWallpaperTimerAsync();
         clock.Tick += (_, __) => PaintRotationStatus();
@@ -82,6 +89,19 @@ internal sealed partial class MainForm : AntdUI.Window
                 ShowRecent();
             await RefreshAsync();
         };
+    }
+
+    private void RebuildTrayMenu()
+    {
+        var previousMenu = trayMenu;
+        trayMenu = MakeMenu();
+        trayMenu.Items.Add(Strings.Get("Open Dayframe"), null, (_, __) => ShowFromTray());
+        trayMenu.Items.Add(Strings.Get("Next wallpaper"), null, async (_, __) => await ChangeNowAsync());
+        trayMenu.Items.Add(Strings.Get("Pause / resume auto-change"), null, (_, __) => TogglePaused());
+        trayMenu.Items.Add(new ToolStripSeparator());
+        trayMenu.Items.Add(Strings.Get("Exit"), null, (_, __) => { quitting = true; Close(); });
+        tray.ContextMenuStrip = trayMenu;
+        previousMenu?.Dispose();
     }
 
     private void ShowPage(string view)
@@ -153,6 +173,7 @@ internal sealed partial class MainForm : AntdUI.Window
             if (quitting) return;
             bool changed = !recent.Select(item => item.Id).SequenceEqual(fetched.Select(item => item.Id));
             recent = fetched;
+            SaveTitlesIfChanged(titles.Add(fetched));
             refreshAfter = DateTimeOffset.Now.AddHours(1);
             if (page == "today" && Visible && (changed || selected == null || force))
                 ShowRecent();
@@ -162,6 +183,7 @@ internal sealed partial class MainForm : AntdUI.Window
                 selected = null;
             }
             PickQueue();
+            _ = RefreshTitlesAsync();
             if (force)
                 Status("Bing wallpapers updated");
         }
@@ -170,10 +192,75 @@ internal sealed partial class MainForm : AntdUI.Window
             if (quitting) return;
             refreshAfter = DateTimeOffset.Now.AddMinutes(10);
             if (recent.Count == 0)
-                heroTitle.Text = "Could not load Bing wallpapers";
+                heroTitle.Text = Strings.Get("Could not load Bing wallpapers");
             Status(recent.Count == 0 ? ErrorText(error) : "Showing cached Bing wallpapers", true);
         }
         finally { refreshing = false; UpdateButtons(); }
+    }
+
+    private async Task RefreshTitlesAsync()
+    {
+        var client = bing;
+        if (client == titleRequest)
+            return;
+        titleRequest = client;
+        string otherMarket = settings.Market == "zh-CN" ? "en-US" : "zh-CN";
+        try
+        {
+            var alternate = await client.FetchArchiveAsync(otherMarket, 0, lifetime.Token);
+            if (quitting || client != bing) return;
+            bool changed = titles.Add(alternate);
+            SaveTitlesIfChanged(changed);
+            if (changed)
+                RefreshDisplayedTitles();
+
+            if (recent.Any(item => titles.Missing(item, otherMarket)))
+            {
+                // The endpoints can differ by a day. Check the adjacent archive page by image ID.
+                var olderTitles = await client.FetchArchiveAsync(otherMarket, 7, lifetime.Token);
+                if (quitting || client != bing) return;
+                changed = titles.Add(olderTitles);
+                SaveTitlesIfChanged(changed);
+                if (changed)
+                    RefreshDisplayedTitles();
+            }
+        }
+        catch (Exception error) when (Operational(error))
+        {
+            Debug.WriteLine("Bing alternate titles: " + error.Message);
+        }
+        finally
+        {
+            if (titleRequest == client)
+                titleRequest = null;
+        }
+    }
+
+    private void SaveTitlesIfChanged(bool changed)
+    {
+        if (!changed) return;
+        try { titles.Save(); }
+        catch (Exception error) when (Operational(error)) { Debug.WriteLine("Bing title cache: " + error.Message); }
+    }
+
+    private string TitleFor(Wallpaper item) => titles.Get(item, settings.Language);
+
+    private string TitleFor(ChangeRecord entry) => entry == null ? null :
+        TitleFor(FindWallpaper(entry.Id)) ?? titles.Get(entry.Id, entry.Title, settings.Language);
+
+    private void RefreshDisplayedTitles()
+    {
+        RefreshTodayLabels();
+        foreach (var tile in gallery.Controls.OfType<PhotoTile>())
+        {
+            tile.SetTitle(TitleFor(tile.Wallpaper));
+            tip.SetToolTip(tile, tile.DisplayTitle);
+        }
+        if (savedEntry != null && !editTitle.Focused)
+            editTitle.Text = TitleFor(savedEntry.Wallpaper);
+        UpdateDesktopTitle();
+        UpdateHistoryTitles();
+        PaintRotationStatus();
     }
 
     private void ClearRecentCards()
@@ -195,14 +282,15 @@ internal sealed partial class MainForm : AntdUI.Window
         foreach (var item in recent)
         {
             bool newest = item == recent[0];
-            var tile = new PhotoTile(item, null, newest ? "Today" : item.Day.ToString("ddd d", English), true)
+            var tile = new PhotoTile(item, null, newest ? Strings.Get("Today") : Strings.Date(item.Day, "ddd d", "ddd d日"),
+                true, TitleFor(item))
             {
                 Dock = DockStyle.Fill, Margin = new Padding(0, 0, S(4), 0)
             };
             recentCards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / recent.Count));
             recentCards.Controls.Add(tile);
             tile.Click += (_, __) => SelectToday(item);
-            tip.SetToolTip(tile, item.Title);
+            tip.SetToolTip(tile, tile.DisplayTitle);
             _ = LoadTileAsync(tile, recentRequest.Token);
         }
         recentCards.ResumeLayout();
@@ -228,30 +316,33 @@ internal sealed partial class MainForm : AntdUI.Window
         bool current = item != null && settings?.CurrentId == item.Id;
         bool saved = entry != null && library.Exists(entry);
         bool latest = item != null && recent.FirstOrDefault()?.Id == item.Id;
-        todayDate.Text = item == null ? "Bing" : (latest ? "Today" : item.Day.ToString("ddd", English)) +
-            " · " + item.Day.ToString("ddd, d MMM", English);
-        todayState.Text = current ? "On your desktop" : saved ? "Saved" : "Not set yet";
+        todayDate.Text = item == null ? "Bing" : Strings.Date(item.Day, "ddd, d MMM", "M月d日 ddd");
+        if (latest)
+            todayDate.Text = Strings.Get("Today") + " · " + todayDate.Text;
+        todayState.Text = Strings.Get(current ? "On your desktop" : saved ? "Saved" : "Not set yet");
         todayState.Glyph = current ? "desktop" : saved ? "check" : null;
         todayState.GlyphSize = 14;
         todayState.Width = S(current ? 148 : 112);
-        todayState.GlyphColor = current ? Palette.Amber : Palette.Blue;
+        todayState.GlyphColor = current ? Palette.Amber : Palette.PhotoBlue;
         todayState.Invalidate();
         resolution.Text = entry != null ? $"{entry.Width} × {entry.Height}" : item?.Downloadable == true ? "UHD" : "";
         resolution.Visible = item != null;
-        heroTitle.Text = item?.Title ?? "Getting today’s wallpaper…";
+        heroTitle.Text = TitleFor(item) ?? Strings.Get("Getting today’s wallpaper…");
         heroCredit.Text = Attribution(item);
         tip.SetToolTip(heroCredit, item?.Copyright ?? "");
         about.Visible = !string.IsNullOrEmpty(item?.CopyrightLink);
-        fit.Text = settings?.Fit ?? "Fill";
-        hero.Contain = fit.Text == "Fit" || fit.Text == "Center";
+        string fitMode = settings.Fit;
+        fit.Text = Strings.Get(fitMode);
+        hero.Contain = fitMode == "Fit" || fitMode == "Center";
         hero.Invalidate();
-        favorite.GlyphColor = entry?.Favorite == true ? Palette.Amber : Palette.Text;
-        favorite.AccessibleName = entry?.Favorite == true ? "Remove from favorites" : "Add to favorites";
+        favorite.GlyphColor = entry?.Favorite == true ? Palette.Amber : Palette.PhotoInk;
+        favorite.AccessibleName = Strings.Get(entry?.Favorite == true ? "Remove from favorites" : "Add to favorites");
         favorite.Invalidate();
-        apply.Text = changing ? "Working…" : IsCurrentFit(item) ? "Current wallpaper" : "Set as wallpaper";
+        apply.Text = Strings.Get(changing ? "Working…" : IsCurrentFit(item) ? "Current wallpaper" : "Set as wallpaper");
         fileHint.Text = item == null ? "" : saved ? $"{entry.FileName} · {FormatBytes(library.Bytes(entry))}" :
-            item.Downloadable ? "Saves as " + (library?.ProposedName(item) ?? item.Title + "_" + item.Date + ".jpg") : "Download unavailable";
-        marketName.Text = settings?.Market == "zh-CN" ? "Bing · China" : "Bing · United States";
+            item.Downloadable ? Strings.Format("Saves as {0}", library?.ProposedName(item, TitleFor(item)) ??
+                TitleFor(item) + "_" + item.Date + ".jpg") : Strings.Get("Download unavailable");
+        marketName.Text = Strings.Get(settings?.Market == "zh-CN" ? "Bing · China" : "Bing · United States");
         PlaceToday(Logic(todayPage.Width), Logic(todayPage.Height));
         foreach (PhotoTile tile in recentCards.Controls)
         {
@@ -259,7 +350,8 @@ internal sealed partial class MainForm : AntdUI.Window
             var stored = library?.Find(tile.Wallpaper.Id);
             tile.Saved = stored != null && library.Exists(stored);
             tile.OnDesktop = settings?.CurrentId == tile.Wallpaper.Id;
-            tile.Invalidate();
+            tile.SetTitle(TitleFor(tile.Wallpaper));
+            tip.SetToolTip(tile, tile.DisplayTitle);
         }
         UpdateButtons();
     }
@@ -299,7 +391,7 @@ internal sealed partial class MainForm : AntdUI.Window
         catch (Exception error) when (Operational(error))
         {
             if (!token.IsCancellationRequested && !tile.IsDisposed)
-                tip.SetToolTip(tile, tile.Wallpaper.Title + " · " + ErrorText(error));
+                tip.SetToolTip(tile, tile.DisplayTitle + " · " + ErrorText(error));
         }
     }
 
@@ -316,7 +408,7 @@ internal sealed partial class MainForm : AntdUI.Window
         RefreshTodayLabels();
         try
         {
-            var entry = await library.SaveAsync(item, bing, lifetime.Token);
+            var entry = await library.SaveAsync(item, bing, lifetime.Token, TitleFor(item));
             await Task.Run(() => DesktopWallpaper.Apply(library.PathOf(entry), settings.Fit), lifetime.Token);
             string at = DateTimeOffset.Now.ToString("o", CultureInfo.InvariantCulture);
             settings.CurrentId = item.Id;
@@ -325,7 +417,7 @@ internal sealed partial class MainForm : AntdUI.Window
             settings.History = settings.History.Take(20).ToList();
             settings.Save();
             library.Update(entry.With(appliedAt: at));
-            Status("Wallpaper set · " + entry.Wallpaper.Title);
+            Status(Strings.Format("Wallpaper set · {0}", TitleFor(entry.Wallpaper)));
         }
         catch (Exception error) when (Operational(error)) { Report(error); }
         finally
@@ -350,7 +442,7 @@ internal sealed partial class MainForm : AntdUI.Window
         UpdateButtons();
         try
         {
-            var entry = await library.SaveAsync(selected, bing, lifetime.Token);
+            var entry = await library.SaveAsync(selected, bing, lifetime.Token, TitleFor(selected));
             library.Update(entry.With(favorite: !entry.Favorite));
             Status(entry.Favorite ? "Removed from favorites" : "Added to favorites");
         }
@@ -387,11 +479,17 @@ internal sealed partial class MainForm : AntdUI.Window
         Cancel(ref desktopRequest);
         desktopPreview.SetImage(null);
         var item = FindWallpaper(settings.CurrentId);
-        nowTitle.Text = item?.Title ?? settings.History.FirstOrDefault()?.Title ?? "No wallpaper set";
+        UpdateDesktopTitle();
         if (item == null)
             return;
         desktopRequest = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         _ = LoadPhotoAsync(desktopPreview, item, true, desktopRequest.Token);
+    }
+
+    private void UpdateDesktopTitle()
+    {
+        nowTitle.Text = TitleFor(FindWallpaper(settings.CurrentId)) ?? TitleFor(settings.History.FirstOrDefault()) ??
+            Strings.Get("No wallpaper set");
     }
 
     private List<Wallpaper> RotationPool()
@@ -418,6 +516,13 @@ internal sealed partial class MainForm : AntdUI.Window
             return;
         }
         queued = plan.Pick(pool, settings, another, queued?.Id) ?? (another ? queued : null);
+        UpdateQueuePreview();
+        PaintRotationStatus();
+        UpdateButtons();
+    }
+
+    private void UpdateQueuePreview()
+    {
         Cancel(ref queueRequest);
         nextPreview.SetImage(null);
         if (queued != null)
@@ -425,8 +530,6 @@ internal sealed partial class MainForm : AntdUI.Window
             queueRequest = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
             _ = LoadPhotoAsync(nextPreview, queued, true, queueRequest.Token);
         }
-        PaintRotationStatus();
-        UpdateButtons();
     }
 
     private async Task ChangeNowAsync()
@@ -567,14 +670,25 @@ internal sealed partial class MainForm : AntdUI.Window
 
     private static ContextMenuStrip MakeMenu() => new ContextMenuStrip
     {
-        ShowImageMargin = false, BackColor = Palette.Surface, ForeColor = Palette.Text, Font = Palette.Font(13)
+        ShowImageMargin = false, BackColor = Palette.Surface, ForeColor = Palette.Text, Font = Palette.Font(13),
+        Renderer = new ToolStripProfessionalRenderer(new MenuColors())
     };
+
+    private sealed class MenuColors : ProfessionalColorTable
+    {
+        public override Color ToolStripDropDownBackground => Palette.Surface;
+        public override Color MenuBorder => Palette.Line;
+        public override Color MenuItemBorder => Palette.Line;
+        public override Color MenuItemSelected => Palette.Hover;
+        public override Color SeparatorDark => Palette.Line;
+        public override Color SeparatorLight => Palette.Line;
+    }
 
     private static void Popup(Control anchor, params (string Title, Action Action)[] actions)
     {
         var menu = MakeMenu();
         foreach (var item in actions)
-            menu.Items.Add(item.Title, null, (_, __) => item.Action());
+            menu.Items.Add(Strings.Get(item.Title), null, (_, __) => item.Action());
         menu.Closed += (_, __) => menu.Dispose();
         menu.Show(anchor, new Point(0, anchor.Height + S(3)));
     }
@@ -589,10 +703,10 @@ internal sealed partial class MainForm : AntdUI.Window
     {
         if (quitting)
             return;
-        footer.Text = value;
+        footer.Text = Strings.Get(value);
         footer.Visible = !string.IsNullOrEmpty(value);
         footer.ForeColor = error ? Palette.Error : Palette.Muted;
-        tip.SetToolTip(footer, value);
+        tip.SetToolTip(footer, footer.Text);
     }
 
     internal void Report(Exception error)
@@ -609,7 +723,7 @@ internal sealed partial class MainForm : AntdUI.Window
         error is SerializationException || error is System.Security.SecurityException || error is Win32Exception ||
         error is System.Runtime.InteropServices.ExternalException;
 
-    private static string ErrorText(Exception error) => error is OperationCanceledException ? "The request timed out or was cancelled."
+    private static string ErrorText(Exception error) => error is OperationCanceledException ? Strings.Get("The request timed out or was cancelled.")
         : error.InnerException is System.Net.WebException ? error.InnerException.Message : error.Message;
 
     internal static string FormatBytes(long bytes) => bytes >= 1024 * 1024 ? $"{bytes / (1024 * 1024d):0.#} MB"
