@@ -8,7 +8,7 @@ using System.Windows.Forms;
 
 namespace BingWallpapers;
 
-internal sealed class MetadataDialog : AntdUI.Window
+internal sealed class MetadataDialog : Form
 {
     private readonly MainForm owner;
     private readonly WallpaperLibrary library;
@@ -23,15 +23,12 @@ internal sealed class MetadataDialog : AntdUI.Window
         this.library = library;
         Text = Strings.Get("Metadata file");
         BackColor = Palette.Canvas;
-        BorderColor = Palette.Line;
+        FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.CenterParent;
         ShowInTaskbar = false;
         MinimizeBox = MaximizeBox = false;
-        Resizable = false;
         AutoScaleMode = AutoScaleMode.None;
-        AutoHandDpi = false;
-        _ = Handle;
-        Size = new Size(Palette.Px(800), Palette.Px(592));
+        ClientSize = new Size(Palette.Px(800), Palette.Px(592));
 
         var panel = MainForm.PanelOn(this, Palette.Surface, 19, true);
         panel.Dock = DockStyle.Fill;
