@@ -10,8 +10,9 @@ internal sealed partial class MainForm
 {
     private readonly ToolTip tip = new ToolTip { AutomaticDelay = 350, AutoPopDelay = 9000 };
     private UI.PageHeader chrome;
-    private FramePanel shell, nowCard, searchBox, inspector, metadataBar;
-    private Panel todayPage, libraryPage, rotationPage, settingsPage, inspectorDetails;
+    private FramePanel shell, nowCard, inspector, metadataBar;
+    private Panel todayPage, libraryPage;
+    private ThemedScrollPanel rotationPage, settingsPage, inspectorDetails;
     private PhotoView hero, desktopPreview, libraryPreview;
     private FrameButton[] navigation, windowButtons, libraryFilters;
     private FrameButton previous, pause, next, todayDate, todayState, resolution, fit, about, favorite,
@@ -26,7 +27,7 @@ internal sealed partial class MainForm
     private FlowLayoutPanel tags;
     private TableLayoutPanel recentCards;
     private FrameButton sort;
-    private PictureBox brandIcon, searchIcon;
+    private PictureBox brandIcon;
     private string page = "today";
 
     private static int S(int n) => Palette.Px(n);
@@ -98,10 +99,9 @@ internal sealed partial class MainForm
         shell = PanelOn(this, Palette.Canvas, 16, true);
         todayPage = PanelOn(shell, Palette.Canvas, 0);
         libraryPage = PanelOn(shell, Palette.Canvas, 0);
-        rotationPage = PanelOn(shell, Palette.Canvas, 0);
-        settingsPage = PanelOn(shell, Palette.Canvas, 0);
+        rotationPage = Add(shell, new ThemedScrollPanel(Palette.Canvas));
+        settingsPage = Add(shell, new ThemedScrollPanel(Palette.Canvas));
         todayPage.Visible = libraryPage.Visible = rotationPage.Visible = settingsPage.Visible = false;
-        rotationPage.AutoScroll = settingsPage.AutoScroll = true;
         MakeToday();
         MakeLibrary();
         MakeRotation();
@@ -160,11 +160,9 @@ internal sealed partial class MainForm
     {
         libraryTitle = LabelOn(libraryPage, "Library", 42, false, Palette.Text, Palette.SerifFamily);
         libraryStats = LabelOn(libraryPage, "", 13, false, Palette.Muted);
-        searchBox = PanelOn(libraryPage, Palette.Canvas, 10, true);
-        searchIcon = Add(searchBox, new PictureBox { Image = Palette.Icon("search", 18, Palette.Muted), SizeMode = PictureBoxSizeMode.CenterImage });
-        Put(searchIcon, 10, 10, 22, 20);
-        search = InputOn(searchBox, "Search title or tag");
-        search.BorderWidth = 0;
+        search = InputOn(libraryPage, "Search title or tag");
+        search.Prefix = Palette.Icon("search", 18, Palette.Muted);
+        search.WaveSize = 0;
         search.TextChanged += (_, __) => RenderLibrary();
         sort = ButtonOn(libraryPage, SortLabel(order), null, 0, ButtonLook.Outline, ShowSortChoices);
         sort.EndGlyph = "down";
@@ -187,10 +185,10 @@ internal sealed partial class MainForm
         metadata.BringToFront();
 
         inspector = PanelOn(libraryPage, Palette.Surface, 17, true);
-        inspectorDetails = PanelOn(inspector, Palette.Surface, 0);
-        inspectorDetails.AutoScroll = true;
-        libraryPreview = Add(inspectorDetails, new PhotoView());
-        editTitle = InputOn(inspectorDetails, "Title");
+        inspectorDetails = Add(inspector, new ThemedScrollPanel(Palette.Surface));
+        var details = inspectorDetails.Content;
+        libraryPreview = Add(details, new PhotoView());
+        editTitle = InputOn(details, "Title");
         editTitle.Font = Palette.Font(29, false, Palette.SerifFamily);
         editTitle.BackColor = Palette.Surface;
         editTitle.BorderWidth = 0;
@@ -200,22 +198,22 @@ internal sealed partial class MainForm
             if (e.KeyCode == Keys.Enter) { CommitTitle(); e.SuppressKeyPress = true; }
         };
         string[] labels = { "Date", "Size", "Credit", "Applied" };
-        metadataFields = labels.Select(label => LabelOn(inspectorDetails, label, 12, false, Palette.Muted)).ToArray();
-        detailDate = LabelOn(inspectorDetails, "", 13);
-        detailSize = LabelOn(inspectorDetails, "", 13);
-        detailCredit = LabelOn(inspectorDetails, "", 13);
-        detailApplied = LabelOn(inspectorDetails, "", 13);
+        metadataFields = labels.Select(label => LabelOn(details, label, 12, false, Palette.Muted)).ToArray();
+        detailDate = LabelOn(details, "", 13);
+        detailSize = LabelOn(details, "", 13);
+        detailCredit = LabelOn(details, "", 13);
+        detailApplied = LabelOn(details, "", 13);
         detailFields = new[] { detailDate, detailSize, detailCredit, detailApplied };
-        nameLabel = LabelOn(inspectorDetails, "File", 12, false, Palette.Muted);
-        nameBox = PanelOn(inspectorDetails, Palette.Canvas, 10, true);
+        nameLabel = LabelOn(details, "File", 12, false, Palette.Muted);
+        nameBox = PanelOn(details, Palette.Canvas, 10, true);
         savedName = LabelOn(nameBox, "", 12, false, Palette.Text, "JetBrains Mono");
         copyName = ButtonOn(nameBox, "", "copy", 16, ButtonLook.Plain, () => Copy(savedEntry?.FileName), "Copy file name");
-        tagsLabel = LabelOn(inspectorDetails, "Tags", 12, false, Palette.Muted);
-        tags = Add(inspectorDetails, new FlowLayoutPanel { WrapContents = true, BackColor = Palette.Surface });
-        favoriteLabel = LabelOn(inspectorDetails, "Favorite");
-        rotationLabel = LabelOn(inspectorDetails, "Include in auto-change");
-        savedFavorite = ToggleOn(inspectorDetails, "Favorite", value => ChangeEntry(entry => entry.With(favorite: value)));
-        savedRotation = ToggleOn(inspectorDetails, "Include in auto-change", value => ChangeEntry(entry => entry.With(rotation: value)));
+        tagsLabel = LabelOn(details, "Tags", 12, false, Palette.Muted);
+        tags = Add(details, new FlowLayoutPanel { WrapContents = true, BackColor = Palette.Surface });
+        favoriteLabel = LabelOn(details, "Favorite");
+        rotationLabel = LabelOn(details, "Include in auto-change");
+        savedFavorite = ToggleOn(details, "Favorite", value => ChangeEntry(entry => entry.With(favorite: value)));
+        savedRotation = ToggleOn(details, "Include in auto-change", value => ChangeEntry(entry => entry.With(rotation: value)));
         applySaved = ButtonOn(inspector, "Set as wallpaper", "desktop", 18, ButtonLook.Primary,
             async () => await ApplyAsync(savedEntry?.Wallpaper));
         revealSaved = ButtonOn(inspector, "Reveal in folder", "folder", 18, ButtonLook.Soft,
@@ -271,8 +269,8 @@ internal sealed partial class MainForm
             switch (page)
             {
                 case "library": PlaceLibrary(w, h); break;
-                case "rotation": PlaceRotation(w, h); break;
-                case "settings": PlaceSettings(w, h); break;
+                case "rotation": PlaceRotation(); break;
+                case "settings": PlaceSettings(); break;
                 default: PlaceToday(w, h); break;
             }
         }
@@ -316,8 +314,7 @@ internal sealed partial class MainForm
         int sortWidth = Math.Min(150, body / 4);
         int searchWidth = Math.Min(210, body / 3);
         Put(sort, start - 24 - sortWidth, 50, sortWidth, 40);
-        Put(searchBox, Logic(sort.Left) - searchWidth - 8, 50, searchWidth, 40);
-        Put(search, 35, 3, searchWidth - 39, 34);
+        Put(search, Logic(sort.Left) - searchWidth - 8, 50, searchWidth, 40);
         int filterX = 24;
         int[] filterWidths = { 71, 104, 116, 139 };
         for (int i = 0; i < libraryFilters.Length; i++)
@@ -336,12 +333,12 @@ internal sealed partial class MainForm
         Put(inspector, start, 24, side, h - 48);
         int actionWidth = side - 34, panelHeight = h - 48;
         int detailsHeight = panelHeight - 126;
-        int inner = detailsHeight < 540 ? actionWidth - 16 : actionWidth;
-        int photoHeight = Math.Min(inner * 9 / 16, Math.Max(78, detailsHeight - 405));
         Put(inspectorDetails, 1, 12, side - 2, detailsHeight);
-        int scrollY = Logic(inspectorDetails.AutoScrollPosition.Y);
-        Put(libraryPreview, 15, scrollY + 5, inner, photoHeight);
-        int y = scrollY + 5 + photoHeight + 9;
+        int inner = Logic(inspectorDetails.Content.Width) - 32;
+        int photoHeight = Math.Min(inner * 9 / 16, Math.Max(78, detailsHeight - 405));
+        int y = 14 + photoHeight;
+        inspectorDetails.ContentHeight = S(y + 383);
+        Put(libraryPreview, 15, 5, inner, photoHeight);
         Put(editTitle, 14, y, inner + 4, 40);
         for (int i = 0; i < 4; i++)
         {
@@ -358,7 +355,6 @@ internal sealed partial class MainForm
         Put(savedFavorite, inner - 25, y + 313, 40, 24);
         Put(rotationLabel, 16, y + 351, inner - 45, 28);
         Put(savedRotation, inner - 25, y + 352, 40, 24);
-        inspectorDetails.AutoScrollMinSize = new Size(0, S(y - scrollY + 383));
         Put(applySaved, 16, panelHeight - 105, actionWidth, 40);
         Put(revealSaved, 16, panelHeight - 57, actionWidth - 48, 40);
         Put(removeSaved, side - 57, panelHeight - 57, 40, 40);

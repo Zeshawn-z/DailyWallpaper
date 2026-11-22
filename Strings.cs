@@ -24,6 +24,7 @@ internal static class Strings
         // Navigation, tray and Today.
         ["Today"] = "今日",
         ["Library"] = "壁纸库",
+        ["Vertical scroll bar"] = "垂直滚动条",
         ["Auto-change"] = "自动换图",
         ["Settings"] = "设置",
         ["Minimize"] = "最小化",

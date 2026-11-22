@@ -35,9 +35,10 @@ internal sealed partial class MainForm
 
     private void MakeRotation()
     {
-        autoTitle = LabelOn(rotationPage, "Auto-change", 42, false, Palette.Text, Palette.SerifFamily);
-        autoSub = LabelOn(rotationPage, "Runs in the background. Closing this window does not stop it.", 13, false, Palette.Muted);
-        masterCard = PanelOn(rotationPage, Palette.Surface, 15, true);
+        var content = rotationPage.Content;
+        autoTitle = LabelOn(content, "Auto-change", 42, false, Palette.Text, Palette.SerifFamily);
+        autoSub = LabelOn(content, "Runs in the background. Closing this window does not stop it.", 13, false, Palette.Muted);
+        masterCard = PanelOn(content, Palette.Surface, 15, true);
         masterTitle = LabelOn(masterCard, "Auto-change is off", 14, true);
         masterHint = LabelOn(masterCard, "", 12, false, Palette.Muted);
         master = ToggleOn(masterCard, "Auto-change", value =>
@@ -45,7 +46,7 @@ internal sealed partial class MainForm
             if (ready && !loadingControls) UpdateSettings(() => settings.RotationEnabled = value, true);
         });
 
-        schedulePanel = PanelOn(rotationPage, Palette.Surface, 17, true);
+        schedulePanel = PanelOn(content, Palette.Surface, 17, true);
         scheduleTitle = LabelOn(schedulePanel, "Schedule", 22, false, Palette.Text, Palette.SerifFamily);
         scheduleSub = LabelOn(schedulePanel, "Applies to the wallpaper, not the screen saver", 12, false, Palette.Muted);
         scheduleSub.Align = StringAlignment.Far;
@@ -83,7 +84,7 @@ internal sealed partial class MainForm
         timesHint = LabelOn(schedulePanel, "", 12, false, Palette.Muted);
         timeline = Add(schedulePanel, new ScheduleTimeline());
 
-        poolPanel = PanelOn(rotationPage, Palette.Surface, 17, true);
+        poolPanel = PanelOn(content, Palette.Surface, 17, true);
         poolTitle = LabelOn(poolPanel, "Pick from", 22, false, Palette.Text, Palette.SerifFamily);
         string[] poolTitles = { "Everything in Library", "Favorites only", "The last 8 days from Bing" };
         string[] poolValues = { "library", "favorites", "bing" };
@@ -97,7 +98,7 @@ internal sealed partial class MainForm
             if (ready && !loadingControls) UpdateSettings(() => settings.AvoidRecent = value, false);
         });
 
-        nextPanel = PanelOn(rotationPage, Palette.Surface, 17, true);
+        nextPanel = PanelOn(content, Palette.Surface, 17, true);
         countdown = Add(nextPanel, new Countdown());
         nextCaption = LabelOn(nextPanel, "Next change", 12, false, Palette.Muted);
         nextTime = LabelOn(nextPanel, "—", 40, false, Palette.Text, Palette.SerifFamily);
@@ -114,12 +115,12 @@ internal sealed partial class MainForm
         changeNow.Font = Palette.Font(13, true);
         pauseFor.Font = Palette.Font(13);
 
-        historyPanel = PanelOn(rotationPage, Palette.Surface, 17, true);
+        historyPanel = PanelOn(content, Palette.Surface, 17, true);
         historyTitle = LabelOn(historyPanel, "Recent changes", 22, false, Palette.Text, Palette.SerifFamily);
         historyTimes = Enumerable.Range(0, 3).Select(_ => LabelOn(historyPanel, "", 11, false, Palette.Muted, "JetBrains Mono")).ToArray();
         historyNames = Enumerable.Range(0, 3).Select(_ => LabelOn(historyPanel, "", 13, true)).ToArray();
         historyPhotos = Enumerable.Range(0, 3).Select(_ => Add(historyPanel, new PhotoView { Radius = 6 })).ToArray();
-        backgroundPanel = PanelOn(rotationPage, Palette.Surface, 17, true);
+        backgroundPanel = PanelOn(content, Palette.Surface, 17, true);
         backgroundTitle = LabelOn(backgroundPanel, "Background", 22, false, Palette.Text, Palette.SerifFamily);
         string[] backgrounds = { "Start with Windows", "Keep running in the tray when closed", "Pause on battery power" };
         backgroundLabels = backgrounds.Select(item => LabelOn(backgroundPanel, item)).ToArray();
@@ -156,27 +157,28 @@ internal sealed partial class MainForm
         return number;
     }
 
-    private void PlaceRotation(int w, int h)
+    private void PlaceRotation()
     {
-        var scroll = rotationPage.AutoScrollPosition;
-        int sx = Logic(scroll.X), sy = Logic(scroll.Y);
-        int usable = w - 48 - (h < 767 ? 15 : 0), side = Math.Min(340, Math.Max(264, usable / 3));
+        static int SidebarWidth(int width) => Math.Min(340, Math.Max(264, width / 3));
+        bool random = scheduleMode == "random";
+        int baseHeight = random ? 785 : 759;
+        int usable = Logic(rotationPage.Content.Width) - 48, side = SidebarWidth(usable);
         int main = usable - side - 24, right = 24 + main + 24;
-        bool compactRandom = main < 530 && scheduleMode == "random";
-        int scheduleHeight = scheduleMode == "random" ? compactRandom ? 356 : 342 : 296;
-        Put(autoTitle, sx + 24, sy + 20, main, 50);
-        Put(autoSub, sx + 24, sy + 68, main, 23);
-        Put(masterCard, sx + right + side - 213, sy + 27, 213, 58);
+        bool compactRandom = random && main < 530;
+        rotationPage.ContentHeight = S(compactRandom ? 799 : baseHeight);
+        int scheduleHeight = random ? compactRandom ? 356 : 342 : 296;
+        Put(autoTitle, 24, 20, main, 50);
+        Put(autoSub, 24, 68, main, 23);
+        Put(masterCard, right + side - 213, 27, 213, 58);
         Put(masterTitle, 17, 8, 131, 23);
         Put(masterHint, 17, 29, 131, 23);
         Put(master, 156, 17, 40, 24);
-        Put(schedulePanel, sx + 24, sy + 104, main, scheduleHeight);
+        Put(schedulePanel, 24, 104, main, scheduleHeight);
         Put(scheduleTitle, 20, 16, 130, 37);
         Put(scheduleSub, 151, 16, main - 171, 37);
         Put(segments, 20, 65, main - 40, 45);
         int segment = (main - 50) / 3;
         for (int i = 0; i < modes.Length; i++) Put(modes[i], 5 + i * segment, 5, segment, 35);
-        bool random = scheduleMode == "random";
         Put(intervalIntro, 20, 141, random ? 217 : scheduleMode == "daily" ? main - 40 : 107, 31);
         Put(interval, 133, 126, 88, 56);
         Put(minInterval, 241, 126, 72, 56);
@@ -205,14 +207,14 @@ internal sealed partial class MainForm
         Put(timesTitle, 20, random ? 245 + randomOffset : 228, 88, 28);
         Put(timesHint, 110, random ? 245 + randomOffset : 228, main - 131, 28);
         Put(timeline, 12, random ? 270 + randomOffset : 252, main - 24, random ? 51 : 39);
-        Put(poolPanel, sx + 24, sy + 120 + scheduleHeight, main, 304);
+        Put(poolPanel, 24, 120 + scheduleHeight, main, 304);
         Put(poolTitle, 20, 14, main - 40, 36);
         for (int i = 0; i < 3; i++)
             Put(pools[i], 20, 58 + i * 55, main - 40, 52);
         Put(avoidTitle, 20, 247, main - 88, 34);
         Put(avoid, main - 60, 253, 40, 24);
 
-        Put(nextPanel, sx + right, sy + 104, side, 248);
+        Put(nextPanel, right, 104, side, 248);
         Put(countdown, 18, 18, 96, 96);
         Put(nextCaption, 132, 25, side - 149, 20);
         Put(nextTime, 130, 44, side - 149, 42);
@@ -223,7 +225,7 @@ internal sealed partial class MainForm
         Put(shuffle, side - 50, 139, 32, 32);
         Put(changeNow, 18, 195, side - 160, 32);
         Put(pauseFor, side - 142, 195, 124, 32);
-        Put(historyPanel, sx + right, sy + 364, side, 181);
+        Put(historyPanel, right, 364, side, 181);
         Put(historyTitle, 16, 11, side - 32, 36);
         for (int i = 0; i < historyTimes.Length; i++)
         {
@@ -231,7 +233,7 @@ internal sealed partial class MainForm
             Put(historyPhotos[i], 68, 55 + i * 38, 48, 27);
             Put(historyNames[i], 128, 54 + i * 38, side - 146, 30);
         }
-        Put(backgroundPanel, sx + right, sy + 557, side, 187);
+        Put(backgroundPanel, right, 557, side, 187);
         Put(backgroundTitle, 16, 12, side - 32, 36);
         var toggles = new[] { startWindows, keepTray, onBattery };
         for (int i = 0; i < toggles.Length; i++)
@@ -239,7 +241,6 @@ internal sealed partial class MainForm
             Put(backgroundLabels[i], 16, 55 + i * 40, side - 74, 28);
             Put(toggles[i], side - 56, 58 + i * 40, 40, 24);
         }
-        rotationPage.AutoScrollMinSize = new Size(0, S(Math.Max(759, 443 + scheduleHeight)));
     }
 
     private void ConfigureRotationUi()

@@ -7,6 +7,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -32,6 +33,7 @@ internal sealed partial class MainForm : AntdUI.Window
     private CancellationTokenSource heroRequest, recentRequest, inspectorRequest, desktopRequest;
     private DateTimeOffset refreshAfter, nextAttempt;
     private bool ready, loadingControls, refreshing, changing, quitting, editingDetails;
+    private bool wasMinimized, restoreRepaintPending;
     private int libraryFilter, order;
 
     public MainForm() : this(false) { }
@@ -73,7 +75,11 @@ internal sealed partial class MainForm : AntdUI.Window
         clock.Tick += (_, __) => PaintRotationStatus();
         VisibleChanged += (_, __) =>
         {
-            if (Visible && ready) clock.Start();
+            if (Visible && ready)
+            {
+                clock.Start();
+                QueueRestoreRepaint();
+            }
             else clock.Stop();
         };
         ready = true;
@@ -140,16 +146,39 @@ internal sealed partial class MainForm : AntdUI.Window
 
     internal bool IsResizing { get; private set; }
 
-    protected override CreateParams CreateParams
+    protected override void WndProc(ref Message message)
     {
-        get
+        const int SizeMessage = 0x0005;
+        const int SizeMinimized = 1;
+        base.WndProc(ref message);
+        if (message.Msg != SizeMessage)
+            return;
+        if (message.WParam.ToInt32() == SizeMinimized)
+            wasMinimized = true;
+        else if (wasMinimized)
         {
-            const int Composited = 0x02000000;
-            var parameters = base.CreateParams;
-            parameters.ExStyle |= Composited;
-            return parameters;
+            wasMinimized = false;
+            QueueRestoreRepaint();
         }
     }
+
+    private void QueueRestoreRepaint()
+    {
+        if (restoreRepaintPending || !ready || !IsHandleCreated)
+            return;
+        restoreRepaintPending = true;
+        BeginInvoke((Action)(() =>
+        {
+            restoreRepaintPending = false;
+            if (quitting || !Visible || WindowState == FormWindowState.Minimized)
+                return;
+            const uint InvalidateRegion = 0x0001, IncludeChildren = 0x0080, PaintNow = 0x0100;
+            RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero, InvalidateRegion | IncludeChildren | PaintNow);
+        }));
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool RedrawWindow(IntPtr window, IntPtr area, IntPtr region, uint flags);
 
     protected override void OnResizeBegin(EventArgs e)
     {
@@ -808,6 +837,7 @@ internal sealed partial class MainForm : AntdUI.Window
         if (disposing && !IsDisposed)
         {
             quitting = true;
+            metadataWindow?.Close();
             lifetime.Cancel();
             Cancel(ref heroRequest); Cancel(ref recentRequest); Cancel(ref inspectorRequest);
             Cancel(ref desktopRequest); Cancel(ref queueRequest); Cancel(ref historyRequest);

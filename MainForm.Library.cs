@@ -9,6 +9,8 @@ namespace BingWallpapers;
 
 internal sealed partial class MainForm
 {
+    private MetadataDialog metadataWindow;
+
     private void RenderLibrary(string preferredId = null)
     {
         if (!ready || quitting || page != "library")
@@ -192,13 +194,35 @@ internal sealed partial class MainForm
         Attempt(() =>
         {
             library.Reload();
-            using (var dialog = new MetadataDialog(this, library))
+            if (metadataWindow != null)
             {
-                dialog.ShowDialog(this);
-                if (dialog.ReviewMissing)
-                    libraryFilter = 3;
+                metadataWindow.UpdatePreview();
+                if (metadataWindow.WindowState == FormWindowState.Minimized)
+                    metadataWindow.WindowState = FormWindowState.Normal;
+                metadataWindow.Activate();
+                return;
             }
+            var openedLibrary = library;
+            metadataWindow = new MetadataDialog(this, openedLibrary);
+            metadataWindow.FormClosed += (_, __) =>
+            {
+                metadataWindow = null;
+                if (!quitting && openedLibrary == library)
+                    Attempt(() => { openedLibrary.Reload(); RefreshLibraryMetadata(); });
+            };
+            metadataWindow.Show();
         });
+    }
+
+    internal void ReviewMissingMetadata()
+    {
+        libraryFilter = 3;
+        page = "library";
+        ShowFromTray();
+    }
+
+    internal void RefreshLibraryMetadata()
+    {
         RenderLibrary();
         RefreshTodayLabels();
         PickQueue();

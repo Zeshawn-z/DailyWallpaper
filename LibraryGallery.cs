@@ -32,7 +32,7 @@ internal sealed class LibraryGallery : Control
     }
 
     private const int CacheLimit = 64;
-    private readonly VScrollBar scrollbar = new VScrollBar { Visible = false, TabStop = false };
+    private readonly ThemedScrollBar scrollbar = new ThemedScrollBar { Visible = false };
     private readonly Timer thumbnailDelay = new Timer { Interval = 65 };
     private readonly LinkedList<(ThumbnailSource Source, Bitmap Image)> recent = new LinkedList<(ThumbnailSource, Bitmap)>();
     private readonly Dictionary<ThumbnailSource, LinkedListNode<(ThumbnailSource Source, Bitmap Image)>> thumbnails =
@@ -96,9 +96,8 @@ internal sealed class LibraryGallery : Control
     public Bitmap CopySelectedThumbnail() =>
         selected >= 0 && TryGetThumbnail(cards[selected].Source, out var image) && image != null ? new Bitmap(image) : null;
 
-    private Rectangle View => new Rectangle(0, 0, Math.Max(0, Width - SystemInformation.VerticalScrollBarWidth), Height);
+    private Rectangle View => new Rectangle(0, 0, Math.Max(0, Width - ThemedScrollBar.RailWidth), Height);
     private int Gap => Palette.Px(12);
-    private int MaxOffset => Math.Max(0, scrollbar.Maximum - scrollbar.LargeChange + 1);
 
     protected override void OnSizeChanged(EventArgs e)
     {
@@ -120,13 +119,8 @@ internal sealed class LibraryGallery : Control
         cardWidth = Math.Max(1, width / columns - Gap);
         rowHeight = cardWidth * 9 / 16 + Palette.Px(54);
         int content = ((cards.Count + columns - 1) / columns) * rowHeight;
-        int position = scrollbar.Value;
-        scrollbar.SetBounds(width, 0, SystemInformation.VerticalScrollBarWidth, Height);
-        scrollbar.LargeChange = Math.Max(1, Height);
-        scrollbar.Maximum = Math.Max(0, content - 1);
-        scrollbar.SmallChange = Math.Max(1, rowHeight / 3);
-        scrollbar.Value = Math.Min(position, MaxOffset);
-        scrollbar.Visible = content > Height;
+        scrollbar.SetBounds(width, 0, ThemedScrollBar.RailWidth, Height);
+        scrollbar.SetRange(content, Height, rowHeight / 3);
     }
 
     private (int Start, int End) Range(int top, int bottom)
@@ -212,10 +206,8 @@ internal sealed class LibraryGallery : Control
 
     protected override void OnMouseWheel(MouseEventArgs e)
     {
+        scrollbar.ScrollWheel(e);
         base.OnMouseWheel(e);
-        int lines = SystemInformation.MouseWheelScrollLines;
-        int step = lines < 0 ? Height : scrollbar.SmallChange * lines;
-        ScrollTo(scrollbar.Value - (int)Math.Round(e.Delta / 120d * step));
     }
 
     protected override bool ProcessCmdKey(ref Message msg, Keys key)
@@ -239,15 +231,13 @@ internal sealed class LibraryGallery : Control
         index = Math.Max(0, Math.Min(cards.Count - 1, index));
         var bounds = CardBounds(index);
         if (bounds.Top < 0)
-            ScrollTo(scrollbar.Value + bounds.Top);
+            scrollbar.Value += bounds.Top;
         else if (bounds.Bottom > Height)
-            ScrollTo(scrollbar.Value + bounds.Bottom - Height);
+            scrollbar.Value += bounds.Bottom - Height;
         if (index != selected)
             select(cards[index].Entry);
         return true;
     }
-
-    private void ScrollTo(int position) => scrollbar.Value = Math.Max(0, Math.Min(MaxOffset, position));
 
     private void ViewportChanged(bool reset = false)
     {

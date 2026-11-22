@@ -12,36 +12,52 @@ internal sealed class MetadataDialog : Form
 {
     private readonly MainForm owner;
     private readonly WallpaperLibrary library;
-    private readonly InkLabel missing, missingHelp, untracked, untrackedHelp, written, note;
-    private readonly FrameButton review, remove, add, editor;
-    private readonly RichTextBox preview;
-    public bool ReviewMissing { get; private set; }
+    private InkLabel missing, missingHelp, untracked, untrackedHelp, written, note;
+    private FrameButton review, remove, add, editor;
+    private RichTextBox preview;
 
     public MetadataDialog(MainForm owner, WallpaperLibrary library)
     {
         this.owner = owner;
         this.library = library;
-        Text = Strings.Get("Metadata file");
-        BackColor = Palette.Canvas;
-        FormBorderStyle = FormBorderStyle.None;
-        StartPosition = FormStartPosition.CenterParent;
-        ShowInTaskbar = false;
-        MinimizeBox = MaximizeBox = false;
+        FormBorderStyle = FormBorderStyle.FixedSingle;
+        StartPosition = FormStartPosition.CenterScreen;
+        Icon = owner.Icon;
+        MaximizeBox = false;
+        DoubleBuffered = true;
         AutoScaleMode = AutoScaleMode.None;
         ClientSize = new Size(Palette.Px(800), Palette.Px(592));
+        ApplyAppearance();
+    }
 
+    internal void ApplyAppearance()
+    {
+        SuspendLayout();
+        try
+        {
+            CancelButton = null;
+            if (Controls.Count != 0)
+                Controls[0].Dispose();
+            Text = Strings.Get("Metadata file");
+            BackColor = Palette.Surface;
+            BuildContent();
+        }
+        finally { ResumeLayout(true); }
+    }
+
+    private void BuildContent()
+    {
         var panel = MainForm.PanelOn(this, Palette.Surface, 19, true);
         panel.Dock = DockStyle.Fill;
         Put(MainForm.LabelOn(panel, "Metadata file", 36, false, Palette.Text, Palette.SerifFamily), 28, 18, 605, 45);
         Put(MainForm.LabelOn(panel, "Everything the app remembers about your wallpapers lives in one JSON file next to the images.",
             13, false, Palette.Muted), 28, 62, 703, 32);
-        Put(Button(panel, "", "close", 18, ButtonLook.Soft, Close, "Close"), 737, 24, 36, 36);
         var path = MainForm.PanelOn(panel, Palette.Canvas, 11, true);
         Put(path, 28, 116, 742, 44);
         var icon = MainForm.Add(path, new PictureBox { Image = Palette.Icon("json", 18, Palette.Muted), SizeMode = PictureBoxSizeMode.CenterImage });
         Put(icon, 13, 9, 23, 26);
         var pathText = MainForm.LabelOn(path, library.IndexPath, 12, true, Palette.Text, "JetBrains Mono");
-        Put(pathText, 42, 0, 497, 44);
+        Put(pathText, 42, 2, 497, 40);
         Put(Button(path, "Show in folder", "folder", 16, ButtonLook.Plain, () => owner.Reveal(library.IndexPath)), 552, 6, 141, 32);
         Put(Button(path, "", "copy", 16, ButtonLook.Plain, () => owner.Copy(library.IndexPath), "Copy path"), 704, 6, 32, 32);
 
@@ -50,7 +66,7 @@ internal sealed class MetadataDialog : Form
         Put(missing, 57, 12, 264, 25);
         missingHelp = MainForm.LabelOn(lost, "", 12, false, Palette.Subtle);
         Put(missingHelp, 57, 37, 260, 20);
-        review = Button(lost, "Review", null, 0, ButtonLook.Soft, () => { ReviewMissing = true; Close(); });
+        review = Button(lost, "Review", null, 0, ButtonLook.Soft, () => { Close(); owner.ReviewMissingMetadata(); });
         remove = Button(lost, "Remove entries", null, 0, ButtonLook.Plain, RemoveEntries);
         Put(review, 57, 63, 69, 32);
         Put(remove, 134, 63, 126, 32);
@@ -104,7 +120,7 @@ internal sealed class MetadataDialog : Form
         return card;
     }
 
-    private void UpdatePreview()
+    internal void UpdatePreview()
     {
         int missingCount = library.Entries.Count(entry => !library.Exists(entry));
         int untrackedCount = library.UntrackedFiles().Count;
@@ -152,9 +168,18 @@ internal sealed class MetadataDialog : Form
         preview.ScrollToCaret();
     }
 
-    private void Mutate(Action action)
+    private void Mutate(Action action, bool changesLibrary = true)
     {
-        try { action(); UpdatePreview(); }
+        if (IsDisposed)
+            return;
+        try
+        {
+            library.Reload();
+            action();
+            UpdatePreview();
+            if (changesLibrary)
+                owner.RefreshLibraryMetadata();
+        }
         catch (Exception error) when (error is IOException || error is UnauthorizedAccessException || error is ArgumentException)
         {
             note.Text = error.Message;
@@ -185,7 +210,7 @@ internal sealed class MetadataDialog : Form
         })
         {
             if (dialog.ShowDialog(this) == DialogResult.OK)
-                Mutate(() => library.Export(dialog.FileName));
+                Mutate(() => library.Export(dialog.FileName), false);
         }
     }
 

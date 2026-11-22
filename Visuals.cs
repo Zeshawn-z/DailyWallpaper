@@ -233,7 +233,7 @@ internal sealed class InkLabel : Control
     }
 }
 
-internal sealed class FramePanel : Panel
+internal class FramePanel : Panel
 {
     public Color Fill { get; set; }
     public Color? Border { get; set; }

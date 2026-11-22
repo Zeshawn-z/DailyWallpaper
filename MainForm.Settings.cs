@@ -18,12 +18,13 @@ internal sealed partial class MainForm
 
     private void MakeSettings()
     {
-        settingsTitle = LabelOn(settingsPage, "Settings", 42, false, Palette.Text, Palette.SerifFamily);
-        settingsSub = LabelOn(settingsPage, "Manage your library location and connection to Bing.", 13, false, Palette.Muted);
-        saveSettings = ButtonOn(settingsPage, "Save settings", "check", 16, ButtonLook.Primary, SavePreferences);
-        versionLabel = LabelOn(settingsPage, "Dayframe " + Program.Version, 12, false, Palette.Muted);
+        var content = settingsPage.Content;
+        settingsTitle = LabelOn(content, "Settings", 42, false, Palette.Text, Palette.SerifFamily);
+        settingsSub = LabelOn(content, "Manage your library location and connection to Bing.", 13, false, Palette.Muted);
+        saveSettings = ButtonOn(content, "Save settings", "check", 16, ButtonLook.Primary, SavePreferences);
+        versionLabel = LabelOn(content, "Dayframe " + Program.Version, 12, false, Palette.Muted);
         versionLabel.Align = StringAlignment.Far;
-        appearanceCard = PanelOn(settingsPage, Palette.Surface, 17, true);
+        appearanceCard = PanelOn(content, Palette.Surface, 17, true);
         appearanceTitle = LabelOn(appearanceCard, "Appearance", 22, false, Palette.Text, Palette.SerifFamily);
         languageLabel = LabelOn(appearanceCard, "Language", 13, false, Palette.Subtle);
         themeLabel = LabelOn(appearanceCard, "Theme", 13, false, Palette.Subtle);
@@ -33,14 +34,14 @@ internal sealed partial class MainForm
         language.SelectedIndexChanged += (_, __) => QueueAppearanceChange();
         theme.SelectedIndexChanged += (_, __) => QueueAppearanceChange();
 
-        folderCard = PanelOn(settingsPage, Palette.Surface, 17, true);
+        folderCard = PanelOn(content, Palette.Surface, 17, true);
         folderTitle = LabelOn(folderCard, "Library location", 22, false, Palette.Text, Palette.SerifFamily);
         folderHelp = LabelOn(folderCard, "New wallpapers and wallpapers.json are saved side by side.", 13, false, Palette.Subtle);
         folderPath = InputOn(folderCard, "Wallpaper directory");
         browse = ButtonOn(folderCard, "Browse…", "folder", 16, ButtonLook.Soft, BrowseDirectory);
         openLibrary = ButtonOn(folderCard, "Open current folder", "external", 16, ButtonLook.Plain, OpenLibrary);
 
-        networkCard = PanelOn(settingsPage, Palette.Surface, 17, true);
+        networkCard = PanelOn(content, Palette.Surface, 17, true);
         networkTitle = LabelOn(networkCard, "Network proxy", 22, false, Palette.Text, Palette.SerifFamily);
         networkHelp = LabelOn(networkCard, "Used for Bing lists, previews and original downloads.", 13, false, Palette.Subtle);
         proxyMode = Choices(networkCard, "Proxy mode", "Follow system", "Direct connection", "Custom HTTP proxy");
@@ -48,7 +49,7 @@ internal sealed partial class MainForm
         proxyAddress.PlaceholderText = "127.0.0.1:7890";
         proxyMode.SelectedIndexChanged += (_, __) => proxyAddress.Enabled = proxyMode.SelectedIndex == 2;
 
-        marketCard = PanelOn(settingsPage, Palette.Surface, 17, true);
+        marketCard = PanelOn(content, Palette.Surface, 17, true);
         marketTitle = LabelOn(marketCard, "Bing market", 22, false, Palette.Text, Palette.SerifFamily);
         marketHelp = LabelOn(marketCard, "Controls which daily images appear in Today.", 13, false, Palette.Subtle);
         market = Choices(marketCard, "Bing market", "United States", "China");
@@ -65,37 +66,36 @@ internal sealed partial class MainForm
         return control;
     }
 
-    private void PlaceSettings(int w, int h)
+    private void PlaceSettings()
     {
-        int target = w - 48 - (h < 742 ? 14 : 0);
-        int y = Logic(settingsPage.AutoScrollPosition.Y);
-        Put(settingsTitle, 24, y + 21, target - 155, 50);
-        Put(settingsSub, 24, y + 68, target - 155, 24);
-        Put(saveSettings, target - 115, y + 31, 139, 40);
-        Put(versionLabel, target - 156, y + 73, 180, 20);
-        Put(appearanceCard, 24, y + 104, target, 135);
+        settingsPage.ContentHeight = S(756);
+        int target = Logic(settingsPage.Content.Width) - 48;
+        Put(settingsTitle, 24, 21, target - 155, 50);
+        Put(settingsSub, 24, 68, target - 155, 24);
+        Put(saveSettings, target - 115, 31, 139, 40);
+        Put(versionLabel, target - 156, 73, 180, 20);
+        Put(appearanceCard, 24, 104, target, 135);
         int column = (target - 60) / 2;
         Put(appearanceTitle, 20, 12, target - 40, 37);
         Put(languageLabel, 20, 49, column, 23);
         Put(themeLabel, 40 + column, 49, column, 23);
         Put(language, 17, 74, column + 4, 42);
         Put(theme, 37 + column, 74, column + 4, 42);
-        Put(folderCard, 24, y + 255, target, 156);
+        Put(folderCard, 24, 255, target, 156);
         Put(folderTitle, 20, 13, target - 40, 38);
         Put(folderHelp, 20, 50, target - 40, 26);
         Put(folderPath, 17, 84, target - 151, 43);
         Put(browse, target - 125, 85, 105, 40);
         Put(openLibrary, target - 207, 15, 187, 32);
-        Put(networkCard, 24, y + 427, target, 145);
+        Put(networkCard, 24, 427, target, 145);
         Put(networkTitle, 20, 13, target - 40, 38);
         Put(networkHelp, 20, 50, target - 40, 26);
         Put(proxyMode, 17, 84, 218, 42);
         Put(proxyAddress, 244, 84, target - 263, 42);
-        Put(marketCard, 24, y + 588, target, 145);
+        Put(marketCard, 24, 588, target, 145);
         Put(marketTitle, 20, 13, target - 40, 38);
         Put(marketHelp, 20, 50, target - 40, 26);
         Put(market, 17, 84, 218, 42);
-        settingsPage.AutoScrollMinSize = new Size(0, S(756));
     }
 
     private void LoadOptions()
@@ -170,7 +170,7 @@ internal sealed partial class MainForm
         // Preserve draft form values when rebuilding the labels in another language.
         string draftPath = folderPath.Text, draftProxy = proxyAddress.Text, query = search.Text;
         int draftProxyMode = proxyMode.SelectedIndex, draftMarket = market.SelectedIndex;
-        int scroll = -settingsPage.AutoScrollPosition.Y;
+        int scroll = settingsPage.ScrollOffset;
         bool focusLanguage = language.Focused, focusTheme = theme.Focused;
         settings = updated;
         ready = false;
@@ -185,6 +185,8 @@ internal sealed partial class MainForm
             Strings.SetLanguage(newLanguage);
             Palette.SetTheme(newTheme);
             BuildUi();
+            if (metadataWindow != null)
+                Attempt(metadataWindow.ApplyAppearance);
             search.Text = query;
             ready = true;
             LoadOptions();
@@ -192,7 +194,7 @@ internal sealed partial class MainForm
             proxyMode.SelectedIndex = draftProxyMode;
             proxyAddress.Text = draftProxy;
             market.SelectedIndex = draftMarket;
-            settingsPage.AutoScrollPosition = new Point(0, scroll);
+            settingsPage.ScrollOffset = scroll;
             RebuildTrayMenu();
             RefreshTodayLabels();
             UpdateQueuePreview();
@@ -247,7 +249,12 @@ internal sealed partial class MainForm
         RecolorControls(this);
         BorderColor = Palette.Line;
         Dark = !Palette.IsLight;
-        searchIcon.Image = Palette.Icon("search", 18, Palette.Muted);
+        search.Prefix = Palette.Icon("search", 18, Palette.Muted);
+        trayMenu.BackColor = Palette.Surface;
+        trayMenu.ForeColor = Palette.Text;
+        trayMenu.Invalidate(true);
+        if (metadataWindow != null)
+            Attempt(metadataWindow.ApplyAppearance);
         Invalidate(true);
     }
 
@@ -276,7 +283,10 @@ internal sealed partial class MainForm
             settings = updated;
             library = opened;
             if (changeFolder)
+            {
                 savedEntry = null;
+                metadataWindow?.Close();
+            }
             if (changeProxy || changeMarket)
             {
                 Cancel(ref heroRequest); ClearRecentCards(); Cancel(ref historyRequest);
