@@ -46,7 +46,7 @@ internal sealed partial class MainForm
         var work = Screen.PrimaryScreen.WorkingArea;
         using (var canvas = CreateGraphics())
             Palette.Configure(Math.Min(canvas.DpiX / 96f, Math.Min(work.Width / 1120f, work.Height / 760f)));
-        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application;
+        Icon = Icon.ExtractAssociatedIcon(typeof(MainForm).Assembly.Location) ?? SystemIcons.Application;
         StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
         MinimumSize = new Size(S(956), S(620));
@@ -61,7 +61,7 @@ internal sealed partial class MainForm
         Font = Palette.Font();
         chrome = new UI.PageHeader { BackColor = Palette.Window, ShowButton = false, EnableDoubleClickMaximize = true };
         Controls.Add(chrome);
-        brandIcon = new PictureBox { Image = Palette.Icon("brand", 20, Palette.Amber), SizeMode = PictureBoxSizeMode.CenterImage };
+        brandIcon = new PictureBox { Image = Icon.ToBitmap(), SizeMode = PictureBoxSizeMode.Zoom };
         chrome.Controls.Add(brandIcon);
         brandName = LabelOn(chrome, "Dayframe", 13, true, Palette.Subtle);
         windowButtons = new[]

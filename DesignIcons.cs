@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Text;
 
 namespace BingWallpapers;
 
@@ -9,7 +8,6 @@ internal static class DesignIcons
     {
         ["radio"] = @"<svg xmlns=""http://www.w3.org/2000/svg"" viewBox=""0 0 20 20""><circle cx=""10"" cy=""10"" r=""8.5"" fill=""none"" stroke=""currentColor"" stroke-width=""1.8""/></svg>",
         ["radio-on"] = @"<svg xmlns=""http://www.w3.org/2000/svg"" viewBox=""0 0 20 20""><circle cx=""10"" cy=""10"" r=""8.5"" fill=""none"" stroke=""currentColor"" stroke-width=""1.8""/><circle cx=""10"" cy=""10"" r=""4.4"" fill=""currentColor""/></svg>",
-        ["brand"] = Encoding.UTF8.GetString(Program.ReadResource("BingWallpapers.Assets.Dayframe.svg")),
         ["minimize"] = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""1.5"" stroke-linecap=""round"" stroke-linejoin=""round""><path d=""M5.500 12h13""></path></svg>",
         ["maximize"] = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""1.5"" stroke-linecap=""round"" stroke-linejoin=""round""><rect x=""6"" y=""6"" width=""12"" height=""12"" rx=""1.500""></rect></svg>",
         ["close"] = @"<svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""1.5"" stroke-linecap=""round"" stroke-linejoin=""round""><path d=""M6 6l12 12M18 6L6 18""></path></svg>",

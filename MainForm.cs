@@ -844,6 +844,7 @@ internal sealed partial class MainForm : AntdUI.Window
             Cancel(ref heroRequest); Cancel(ref recentRequest); Cancel(ref inspectorRequest);
             Cancel(ref desktopRequest); Cancel(ref queueRequest); Cancel(ref historyRequest);
             wallpaperTimer.Dispose(); clock.Dispose(); tray?.Dispose(); trayMenu?.Dispose();
+            brandIcon?.Image?.Dispose();
             bing?.Dispose(); lifetime.Dispose(); tip.Dispose();
         }
         base.Dispose(disposing);
