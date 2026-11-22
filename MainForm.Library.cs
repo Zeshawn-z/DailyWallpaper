@@ -52,7 +52,7 @@ internal sealed partial class MainForm
                 "Set a Bing wallpaper to start your library." : "No wallpapers in this filter");
         galleryEmpty.Visible = visible.Count == 0;
         var cards = gallery.Controls.OfType<PhotoTile>().ToArray();
-        bool rebuild = cards.Length != visible.Count || cards.Where((card, i) =>
+        bool rebuild = galleryRequest == null || cards.Length != visible.Count || cards.Where((card, i) =>
             card.Entry != visible[i] || card.Missing != missing.Contains(visible[i])).Any();
         if (rebuild)
         {
