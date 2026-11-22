@@ -4,7 +4,7 @@ Windows 桌面壁纸管理程序。应用通过 Bing 中国区的每日图片接
 
 ## 运行
 
-解压发布包，双击 `BingWallpapers.exe`。把同目录的 `BingWallpapers.exe.config` 保留在旁边。
+解压发布包，双击 `BingWallpapers.exe`。保留同目录下的 `BingWallpapers.exe.config` 和 `AntdUI.dll`。
 
 - 兼容目标为 Windows 7 SP1、Windows 10 和 Windows 11，支持系统采用的 32 位或 64 位 .NET Framework 4.7.2 或更新版本。
 - Windows 7 SP1 如未安装运行时，可下载安装 [Microsoft .NET Framework 4.7.2](https://dotnet.microsoft.com/zh-cn/download/dotnet-framework/net472)。访问 Bing 需要可用的 TLS 1.2 和当前网站证书信任链。
@@ -27,4 +27,4 @@ Windows 桌面壁纸管理程序。应用通过 Bing 中国区的每日图片接
 dotnet build .\BingWallpapers.csproj -c Release
 ```
 
-输出位于 `bin\Release\net472`。项目使用 WinForms 和 .NET Framework 自带库，无第三方运行时依赖。
+输出位于 `bin\Release\net472`。界面使用 [AntdUI](https://github.com/AntdUI/AntdUI) 的 WinForms 组件。NuGet 会在构建时还原该依赖。许可证见 `Licenses/AntdUI-LICENSE.txt`。

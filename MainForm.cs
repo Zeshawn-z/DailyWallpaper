@@ -15,7 +15,7 @@ using Timer = System.Windows.Forms.Timer;
 
 namespace BingWallpapers;
 
-internal sealed partial class MainForm : Form
+internal sealed partial class MainForm : AntdUI.Window
 {
     private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
     private readonly Timer rotation = new Timer();
@@ -96,9 +96,6 @@ internal sealed partial class MainForm : Form
         explore.Visible = view == "explore";
         collection.Visible = view == "library";
         preferences.Visible = view == "settings";
-        HighlightNav(exploreNav, explore.Visible);
-        HighlightNav(libraryNav, collection.Visible);
-        HighlightNav(settingsNav, preferences.Visible);
         if (view == "explore" && bing != null && Visible && needsExploreRefresh)
             ShowRecent();
         if (view == "library" && library != null)
@@ -108,14 +105,6 @@ internal sealed partial class MainForm : Form
             Cancel(ref savedRequest);
             savedPhoto.SetPhoto(null);
         }
-    }
-
-    private static void HighlightNav(ActionButton button, bool selectedNav)
-    {
-        button.Fill = selectedNav ? Theme.Tint : Theme.Rail;
-        button.Stroke = button.Fill;
-        button.ForeColor = selectedNav ? Theme.Accent : Theme.Ink;
-        button.Invalidate();
     }
 
     public void ShowFromTray()
@@ -158,7 +147,7 @@ internal sealed partial class MainForm : Form
             return;
 
         refreshing = true;
-        refresh.Enabled = false;
+        refresh.Loading = true;
         saveSettings.Enabled = false;
         if (Visible)
             Status("正在更新 Bing 壁纸列表…");
@@ -349,8 +338,8 @@ internal sealed partial class MainForm : Form
         rotation.Stop();
         if (settings.RotationMode == "off")
         {
-            schedule.Text = "自动换图已关闭";
-            nextRotation.Text = schedule.Text;
+            schedule.Text = "已关闭";
+            nextRotation.Text = "自动换图已关闭";
         }
         else
         {
@@ -408,7 +397,17 @@ internal sealed partial class MainForm : Form
         }
     }
 
-    private SavedWallpaper SelectedSaved => savedGrid.CurrentRow?.Tag as SavedWallpaper;
+    private SavedWallpaper SelectedSaved =>
+        (savedGrid.SelectedsReal().FirstOrDefault() as LibraryRow)?.Entry;
+
+    private sealed class LibraryRow
+    {
+        public SavedWallpaper Entry { get; }
+        public string Title => Entry.Wallpaper.Title;
+        public string Date => Entry.Wallpaper.DisplayDate;
+
+        public LibraryRow(SavedWallpaper entry) => Entry = entry;
+    }
 
     private void RenderLibrary(string preferredId = null)
     {
@@ -418,23 +417,17 @@ internal sealed partial class MainForm : Form
             entry.Wallpaper.Title.IndexOf(filter, StringComparison.CurrentCultureIgnoreCase) >= 0 ||
             entry.Wallpaper.Date.Contains(filter.Replace("-", "").Replace(".", ""))).ToList()
             ?? new List<SavedWallpaper>();
-        librarySub.Text = library == null ? "保存目录不可用" : $"{library.Entries.Count} 张  ·  {library.DirectoryPath}";
+        librarySub.Text = library == null ? "保存目录不可用" : $"{library.Entries.Count} 张  ·  {new DirectoryInfo(library.DirectoryPath).Name}";
         tip.SetToolTip(librarySub, library?.DirectoryPath);
         renderingLibrary = true;
-        savedGrid.Rows.Clear();
-        int preferredRow = 0;
-        foreach (var entry in matches)
-        {
-            int index = savedGrid.Rows.Add(entry.Wallpaper.Title, entry.Wallpaper.DisplayDate);
-            savedGrid.Rows[index].Tag = entry;
-            if (entry.Wallpaper.Id == preferredId)
-                preferredRow = index;
-        }
-        if (matches.Count != 0)
-            savedGrid.CurrentCell = savedGrid.Rows[preferredRow].Cells[0];
-        libraryEmpty.Controls[0].Text = filter.Length == 0 ? "这里还没有壁纸" : "没有找到匹配的壁纸";
+        savedGrid.DataSource = matches.Select(entry => new LibraryRow(entry)).ToList();
+        int preferredRow = matches.FindIndex(entry => entry.Wallpaper.Id == preferredId);
+        savedGrid.SelectedIndex = matches.Count == 0 ? -1 : Math.Max(0, preferredRow) + 1;
+        emptyTitle.Text = filter.Length == 0 ? "这里还没有壁纸" : "没有找到匹配的壁纸";
+        emptyHelp.Text = filter.Length == 0 ? "设为壁纸后，图片会出现在这里。" : "试试其他标题或日期。";
         libraryEmpty.Visible = matches.Count == 0;
         savedGrid.Visible = matches.Count != 0;
+        savedCard.Visible = matches.Count != 0;
         renderingLibrary = false;
         UpdateSavedPreview();
     }
@@ -446,18 +439,20 @@ internal sealed partial class MainForm : Form
         Cancel(ref savedRequest);
         savedPhoto.SetPhoto(null);
         var entry = SelectedSaved;
+        savedSize.Visible = entry != null;
         if (entry == null)
         {
             savedPhoto.Describe("", "壁纸预览", "");
             savedTitle.Text = "";
-            savedDetail.Text = "换过的壁纸会保存在这里。";
+            savedDetail.Text = "";
         }
         else
         {
             bool exists = File.Exists(library.PathOf(entry));
             savedPhoto.Describe("", exists ? "正在加载预览" : "图片文件已移走", "");
             savedTitle.Text = entry.Wallpaper.Title;
-            savedDetail.Text = $"{entry.Wallpaper.DisplayDate}    {entry.Width} × {entry.Height}\r\n{entry.Wallpaper.Copyright}";
+            savedSize.Text = $"{entry.Width} × {entry.Height}";
+            savedDetail.Text = $"{entry.Wallpaper.DisplayDate}\r\n{entry.Wallpaper.Copyright}";
             tip.SetToolTip(savedTitle, entry.FileName);
             tip.SetToolTip(savedDetail, entry.Wallpaper.Copyright);
             if (exists)
@@ -532,16 +527,19 @@ internal sealed partial class MainForm : Form
         interval.Value = settings.Interval;
         randomMinimum.Value = settings.RandomMinimum;
         randomMaximum.Value = settings.RandomMaximum;
-        rotationMode.SelectedIndex = settings.RotationMode == "random" ? 2 : settings.RotationMode == "fixed" ? 1 : 0;
+        rotationMode.SelectIndex = settings.RotationMode == "random" ? 2 : settings.RotationMode == "fixed" ? 1 : 0;
         UpdateRotationInputs();
     }
 
     private void UpdateRotationInputs()
     {
-        bool fixedMode = rotationMode.SelectedIndex == 1;
-        bool randomMode = rotationMode.SelectedIndex == 2;
+        bool fixedMode = rotationMode.SelectIndex == 1;
+        bool randomMode = rotationMode.SelectIndex == 2;
         intervalLabel.Visible = interval.Visible = fixedMode;
         rangeLabel.Visible = randomMinimum.Visible = maxLabel.Visible = randomMaximum.Visible = randomMode;
+        rotationHelp.Text = fixedMode ? "按日期顺序轮换，到最后一张后循环。"
+            : randomMode ? "从设定范围抽取下一次间隔，并随机挑选壁纸。"
+            : "启用后，程序转到托盘也会继续换图。";
     }
 
     private void SaveSettings()
@@ -560,7 +558,7 @@ internal sealed partial class MainForm : Form
                 LibraryDirectory = Path.GetFullPath(path),
                 ProxyMode = new[] { "system", "direct", "custom" }[proxyMode.SelectedIndex],
                 ProxyAddress = proxyAddress.Text.Trim(),
-                RotationMode = new[] { "off", "fixed", "random" }[rotationMode.SelectedIndex],
+                RotationMode = new[] { "off", "fixed", "random" }[rotationMode.SelectIndex],
                 Interval = (int)interval.Value,
                 RandomMinimum = (int)randomMinimum.Value,
                 RandomMaximum = (int)randomMaximum.Value,
@@ -623,15 +621,17 @@ internal sealed partial class MainForm : Form
     {
         if (quitting)
             return;
-        refresh.Enabled = !refreshing;
+        refresh.Loading = refreshing;
         saveSettings.Enabled = !refreshing && !changing;
         string selectedFile = selected == null ? null : LocalFile(selected);
         apply.Enabled = !changing && library != null && (selected?.Downloadable == true || selectedFile != null);
+        apply.Loading = changing && page == "explore";
         apply.Text = changing ? "正在设置…" :
             selected?.Downloadable == false && selectedFile == null ? "此图不可下载" : "设为壁纸";
         var entry = SelectedSaved;
         bool exists = entry != null && library != null && File.Exists(library.PathOf(entry));
         applySaved.Enabled = !changing && (exists || entry?.Wallpaper.Downloadable == true);
+        applySaved.Loading = changing && page == "library";
         revealSaved.Enabled = exists;
         removeSaved.Enabled = !changing && entry != null;
         revealLibrary.Enabled = library != null;
@@ -643,7 +643,8 @@ internal sealed partial class MainForm : Form
         if (quitting)
             return;
         footer.Text = message;
-        footer.ForeColor = error ? Theme.Alert : Theme.Muted;
+        footer.ForeColor = error ? Palette.Alert : Palette.Muted;
+        statusDot.BackColor = error ? Palette.Alert : Palette.Accent;
         tip.SetToolTip(footer, message);
     }
 
