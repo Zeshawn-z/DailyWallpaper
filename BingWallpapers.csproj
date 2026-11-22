@@ -6,9 +6,9 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\wallpapers.ico</ApplicationIcon>
-    <AssemblyTitle>Bing Wallpapers</AssemblyTitle>
-    <Product>Bing Wallpapers</Product>
-    <Version>1.1.0</Version>
+    <AssemblyTitle>Dayframe</AssemblyTitle>
+    <Product>Dayframe</Product>
+    <Version>2.0.0</Version>
     <DebugType>embedded</DebugType>
     <Deterministic>true</Deterministic>
     <AutomaticUseReferenceAssemblyPackages>false</AutomaticUseReferenceAssemblyPackages>
@@ -17,5 +17,6 @@
     <PackageReference Include="AntdUI" Version="2.4.19" />
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Runtime.Serialization" />
+    <Content Include="Assets\Fonts\*.ttf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

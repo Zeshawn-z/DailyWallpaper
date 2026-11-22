@@ -1,5 +1,7 @@
 using System;
 using System.Drawing;
+using System.Globalization;
+using System.Linq;
 using System.Windows.Forms;
 using UI = AntdUI;
 
@@ -7,341 +9,373 @@ namespace BingWallpapers;
 
 internal sealed partial class MainForm
 {
-    private Panel rail, explore, collection, preferences, archiveCard;
+    private static readonly CultureInfo English = CultureInfo.GetCultureInfo("en-US");
+    private readonly ToolTip tip = new ToolTip { AutomaticDelay = 350, AutoPopDelay = 9000 };
     private UI.PageHeader chrome;
-    private UI.Menu navigation;
-    private Label explorerTitle, explorerSub, recentTitle, recentCount, footer, schedule,
-        libraryTitle, librarySub, savedTitle, savedDetail, settingsTitle, settingsSub,
-        folderTitle, folderHelp, proxyTitle, proxyHelp, rotationTitle, rotationHelp, intervalLabel, rangeLabel, maxLabel;
-    private UI.Panel folderCard, proxyCard, rotationCard, savedCard, libraryEmpty, scheduleCard;
-    private UI.Button toTray, refresh, apply, revealLibrary, applySaved, revealSaved, removeSaved, browse, saveSettings;
-    private PhotoPanel hero, savedPhoto;
+    private FramePanel shell, nowCard, searchBox, inspector, metadataBar;
+    private Panel todayPage, libraryPage, rotationPage, settingsPage, inspectorDetails;
+    private PhotoView hero, desktopPreview, libraryPreview;
+    private FrameButton[] navigation, windowButtons, libraryFilters;
+    private FrameButton previous, pause, next, todayDate, todayState, resolution, fit, about, favorite,
+        more, apply, legendSaved, legendDesktop, older, metadata, copyName, applySaved, revealSaved, removeSaved;
+    private InkLabel brandName, nowCaption, nowTitle, nowNext, heroTitle, heroCredit, fileHint, recentTitle,
+        marketName, libraryTitle, libraryStats, indexStatus, indexCount, galleryEmpty,
+        detailDate, detailSize, detailCredit, detailApplied, nameLabel, tagsLabel, favoriteLabel, rotationLabel;
+    private FramePanel nameBox;
+    private UI.Input search, editTitle;
+    private ToggleControl savedFavorite, savedRotation;
+    private FlowLayoutPanel gallery, tags;
     private TableLayoutPanel recentCards;
-    private UI.Table savedGrid;
-    private UI.Input search, folderPath, proxyAddress;
-    private UI.Select proxyMode;
-    private UI.Segmented rotationMode;
-    private UI.InputNumber interval, randomMinimum, randomMaximum;
-    private PictureBox logo;
-    private Label product, productSub, scheduleTitle, emptyTitle, emptyHelp;
-    private UI.Tag savedSize;
-    private Panel railEdge, statusDot;
-    private readonly ToolTip tip = new ToolTip { AutomaticDelay = 450, AutoPopDelay = 8000 };
-    private float scale;
-    private string page = "explore";
-    private int S(int value) => (int)Math.Round(value * scale);
+    private FrameButton sort;
+    private PictureBox brandIcon;
+    private InkLabel footer;
+    private string page = "today";
+
+    private static int S(int n) => Palette.Px(n);
+    private static int Logic(int n) => (int)Math.Round(n / Palette.Scale);
+    private static void Put(Control c, int x, int y, int w, int h) =>
+        c.SetBounds(S(x), S(y), Math.Max(1, S(w)), Math.Max(1, S(h)));
 
     private void BuildUi()
     {
-        Palette.Configure();
         AutoScaleMode = AutoScaleMode.None;
+        AutoHandDpi = false;
+        var work = Screen.PrimaryScreen.WorkingArea;
         using (var canvas = CreateGraphics())
-            scale = canvas.DpiX / 96f;
-        Text = "Bing Wallpapers · 每日壁纸";
+            Palette.Configure(Math.Min(canvas.DpiX / 96f, Math.Min(work.Width / 1120f, work.Height / 760f)));
+        Text = "Dayframe";
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application;
-        Font = Palette.Font(10);
-        BackColor = Palette.Canvas;
-        ForeColor = Palette.Ink;
+        BackColor = Palette.Window;
         BorderColor = Palette.Line;
+        Font = Palette.Font();
         StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
-        var workArea = Screen.PrimaryScreen.WorkingArea;
-        MinimumSize = new Size(Math.Min(S(890), workArea.Width), Math.Min(S(650), workArea.Height));
-        Size = new Size(Math.Min(S(1230), workArea.Width), Math.Min(S(822), workArea.Height));
+        MinimumSize = new Size(S(956), S(620));
+        Size = new Size(Math.Min(work.Width, S(1280)), Math.Min(work.Height, S(860)));
 
-        chrome = new UI.PageHeader
-        {
-            ShowButton = true, EnableButtonTooltip = true, EnableDoubleClickMaximize = true,
-            BackColor = Palette.Canvas, ForeColor = Palette.Ink, UseForeColorDrawIcons = true,
-            UseSystemStyleColor = false
-        };
+        chrome = new UI.PageHeader { BackColor = Palette.Window, ShowButton = false, EnableDoubleClickMaximize = true };
         Controls.Add(chrome);
-        rail = AddPanel(this, Palette.Rail);
-        railEdge = AddPanel(this, Palette.Line);
-        logo = new PictureBox { Image = Icon.ToBitmap(), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Palette.Rail };
-        rail.Controls.Add(logo);
-        product = AddLabel(rail, "Bing Wallpapers", 11.5f, true);
-        product.Font = new Font("Segoe UI", 11.5f, FontStyle.Bold);
-        productSub = AddLabel(rail, "每日壁纸", 9, false, Palette.Muted);
-        navigation = new UI.Menu
+        brandIcon = new PictureBox { Image = Palette.Icon("brand", 20, Palette.Amber), SizeMode = PictureBoxSizeMode.CenterImage };
+        chrome.Controls.Add(brandIcon);
+        brandName = LabelOn(chrome, "Dayframe", 13, true, Palette.Subtle);
+        windowButtons = new[]
         {
-            AccessibleName = "主导航", BackColor = Palette.Rail, BackActive = Palette.Tint,
-            BackHover = Palette.Hover, ForeColor = Palette.Muted, ForeActive = Palette.Accent,
-            Radius = 9, Gap = 9, IconRatio = .98f, FocusMode = UI.TFocusMode.Line,
-            FocusModeAlign = UI.TAlignMini.Left, FocusModeColor = Palette.Accent
+            ButtonOn(chrome, "", "minimize", 15, ButtonLook.Plain, () => WindowState = FormWindowState.Minimized, "Minimize"),
+            ButtonOn(chrome, "", "maximize", 15, ButtonLook.Plain, () => WindowState = WindowState == FormWindowState.Maximized
+                ? FormWindowState.Normal : FormWindowState.Maximized, "Maximize or restore"),
+            ButtonOn(chrome, "", "close", 15, ButtonLook.Plain, Close, "Close")
         };
-        navigation.Items.Add(new UI.MenuItem { ID = "explore", Text = "探索壁纸", IconSvg = "PictureOutlined", Select = true });
-        navigation.Items.Add(new UI.MenuItem { ID = "library", Text = "本地收藏", IconSvg = "FolderOutlined" });
-        navigation.Items.Add(new UI.MenuItem { ID = "settings", Text = "设置", IconSvg = "SettingOutlined" });
-        navigation.SelectChanged += (_, e) => ShowPage(e.Value.ID);
-        rail.Controls.Add(navigation);
-        scheduleCard = CardOn(rail);
-        scheduleTitle = AddLabel(scheduleCard, "自动换图", 9.5f, true);
-        schedule = AddLabel(scheduleCard, "", 9, false, Palette.Muted);
-        toTray = ButtonOn(rail, "转到托盘", "DownloadOutlined", (_, __) => HideToTray());
-        toTray.Ghost = true;
-        toTray.BorderWidth = 0;
-        toTray.ForeColor = Palette.Muted;
+        foreach (var control in windowButtons)
+            control.ForeColor = Palette.Subtle;
 
-        explore = AddPanel(this, Palette.Canvas);
-        explorerTitle = AddLabel(explore, "探索壁纸", 28, true);
-        explorerSub = AddLabel(explore, "Bing 中国区每日图片", 10, false, Palette.Muted);
-        refresh = ButtonOn(explore, "刷新", "ReloadOutlined", async (_, __) => await RefreshFeedAsync(true));
-        hero = new PhotoPanel(true) { S = S };
-        explore.Controls.Add(hero);
-        apply = ButtonOn(explore, "设为壁纸", "DesktopOutlined", async (_, __) => await ChangeWallpaperAsync(selected), true);
-        archiveCard = AddPanel(explore, Palette.Canvas);
-        recentTitle = AddLabel(archiveCard, "最近发布", 13, true);
-        recentCount = AddLabel(archiveCard, "", 9, false, Palette.Muted);
-        recentCount.TextAlign = ContentAlignment.MiddleRight;
-        recentCards = new TableLayoutPanel { RowCount = 1, BackColor = Palette.Canvas, Margin = Padding.Empty };
-        recentCards.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        archiveCard.Controls.Add(recentCards);
+        navigation = new[]
+        {
+            ButtonOn(this, "Today", "today", 20, ButtonLook.Nav, () => ShowPage("today")),
+            ButtonOn(this, "Library", "library", 20, ButtonLook.Nav, () => ShowPage("library")),
+            ButtonOn(this, "Auto-change", "rotation", 20, ButtonLook.Nav, () => ShowPage("rotation")),
+            ButtonOn(this, "Settings", "settings", 20, ButtonLook.Nav, () => ShowPage("settings"))
+        };
+        nowCard = PanelOn(this, Palette.Surface, 15, true);
+        desktopPreview = Add(nowCard, new PhotoView { Radius = 8 });
+        nowCaption = LabelOn(nowCard, "Now showing", 11, false, Palette.Muted);
+        nowTitle = LabelOn(nowCard, "No wallpaper set", 13, true);
+        nowNext = LabelOn(nowCard, "Auto-change is off", 10, false, Palette.Subtle, "JetBrains Mono");
+        previous = ButtonOn(nowCard, "", "previous", 16, ButtonLook.Soft, async () => await StepAsync(-1), "Previous wallpaper");
+        pause = ButtonOn(nowCard, "", "pause", 16, ButtonLook.Soft, TogglePaused, "Pause auto-change");
+        next = ButtonOn(nowCard, "", "next", 16, ButtonLook.Soft, async () => await StepAsync(1), "Next wallpaper");
+        foreach (var control in new[] { previous, pause, next })
+        {
+            control.Radius = 16;
+            control.SoftFill = Palette.Hover;
+        }
 
-        collection = AddPanel(this, Palette.Canvas);
-        libraryTitle = AddLabel(collection, "本地收藏", 28, true);
-        librarySub = AddLabel(collection, "", 10, false, Palette.Muted);
-        revealLibrary = ButtonOn(collection, "打开目录", "FolderOpenOutlined", (_, __) => OpenLibrary());
-        search = InputOn(collection, "搜索标题或日期", "搜索标题或日期", "SearchOutlined");
-        search.AllowClear = true;
-        search.TextChanged += (_, __) => RenderLibrary();
-        savedGrid = new UI.Table
-        {
-            AccessibleName = "已保存的壁纸", Back = Palette.Surface, ForeColor = Palette.Ink,
-            ColumnBack = Palette.Field, ColumnFore = Palette.Muted, BorderColor = Palette.Line,
-            RowHeight = 47, RowHeightHeader = 40, RowHoverBg = Palette.Hover, RowSelectedBg = Palette.Tint,
-            RowSelectedFore = Palette.Accent, Radius = 13, BorderWidth = 1, MultipleRows = false
-        };
-        savedGrid.Columns = new UI.ColumnCollection
-        {
-            new UI.Column(nameof(LibraryRow.Title), "壁纸").SetWidthFill().SetEllipsis(),
-            new UI.Column(nameof(LibraryRow.Date), "发布日期").SetWidth(112)
-        };
-        savedGrid.SelectIndexChanged += (_, __) => UpdateSavedPreview();
-        collection.Controls.Add(savedGrid);
-        libraryEmpty = CardOn(collection);
-        emptyTitle = AddLabel(libraryEmpty, "这里还没有壁纸", 14, true);
-        emptyTitle.TextAlign = ContentAlignment.MiddleCenter;
-        emptyHelp = AddLabel(libraryEmpty, "设为壁纸后，图片会出现在这里。", 9, false, Palette.Muted);
-        emptyHelp.TextAlign = ContentAlignment.MiddleCenter;
-        savedCard = CardOn(collection);
-        savedPhoto = new PhotoPanel(false) { S = S, BackColor = Palette.Surface };
-        savedCard.Controls.Add(savedPhoto);
-        savedTitle = AddLabel(savedCard, "", 15, true);
-        savedSize = new UI.Tag
-        {
-            Radius = 6, BackColor = Palette.Tint, ForeColor = Palette.Accent, BorderWidth = 0, Font = Palette.Font(8.5f)
-        };
-        savedCard.Controls.Add(savedSize);
-        savedDetail = AddLabel(savedCard, "", 9, false, Palette.Muted);
-        savedDetail.TextAlign = ContentAlignment.TopLeft;
-        applySaved = ButtonOn(savedCard, "设为壁纸", "DesktopOutlined", async (_, __) => await ChangeWallpaperAsync(SelectedSaved?.Wallpaper), true);
-        revealSaved = ButtonOn(savedCard, "定位文件", "FolderOpenOutlined", (_, __) => RevealSaved());
-        removeSaved = ButtonOn(savedCard, "删除", null, (_, __) => DeleteSaved());
-        removeSaved.ForeColor = Palette.Alert;
-
-        preferences = AddPanel(this, Palette.Canvas);
-        settingsTitle = AddLabel(preferences, "设置", 28, true);
-        settingsSub = AddLabel(preferences, "保存位置、网络连接与后台换图", 10, false, Palette.Muted);
-        saveSettings = ButtonOn(preferences, "保存设置", "CheckOutlined", (_, __) => SaveSettings(), true);
-        folderCard = CardOn(preferences);
-        folderTitle = AddLabel(folderCard, "保存目录", 14, true);
-        folderHelp = AddLabel(folderCard, "切换目录后，原文件仍在原目录。", 9, false, Palette.Muted);
-        folderPath = InputOn(folderCard, "壁纸保存目录", "选择壁纸保存目录", "FolderOutlined");
-        browse = ButtonOn(folderCard, "浏览…", null, (_, __) => BrowseForDirectory());
-        proxyCard = CardOn(preferences);
-        proxyTitle = AddLabel(proxyCard, "网络代理", 14, true);
-        proxyHelp = AddLabel(proxyCard, "应用于 Bing 列表、预览和原图下载。", 9, false, Palette.Muted);
-        proxyMode = new UI.Select
-        {
-            AccessibleName = "代理模式", List = true, Radius = 8, BackColor = Palette.Field, BorderColor = Palette.Line
-        };
-        proxyMode.Items.AddRange(new[] { "跟随系统", "直接连接", "自定义 HTTP 代理" });
-        proxyCard.Controls.Add(proxyMode);
-        proxyAddress = InputOn(proxyCard, "HTTP 代理地址", "例如 127.0.0.1:7890", "LinkOutlined");
-        proxyMode.SelectedIndexChanged += (_, __) => proxyAddress.Enabled = proxyMode.SelectedIndex == 2;
-        rotationCard = CardOn(preferences);
-        rotationTitle = AddLabel(rotationCard, "自动换图", 14, true);
-        rotationHelp = AddLabel(rotationCard, "", 9, false, Palette.Muted);
-        rotationMode = new UI.Segmented
-        {
-            AccessibleName = "自动换图模式", Full = true, Radius = 8,
-            BackColor = Palette.Field, BackActive = Palette.Tint, BackHover = Palette.Hover,
-            ForeColor = Palette.Muted, ForeActive = Palette.Accent, ForeHover = Palette.Ink,
-            Padding = new Padding(S(3))
-        };
-        rotationMode.Items.Add(new UI.SegmentedItem { Text = "关闭" });
-        rotationMode.Items.Add(new UI.SegmentedItem { Text = "固定间隔" });
-        rotationMode.Items.Add(new UI.SegmentedItem { Text = "随机换图" });
-        rotationMode.SelectIndexChanged += (_, __) => UpdateRotationInputs();
-        rotationCard.Controls.Add(rotationMode);
-        intervalLabel = AddLabel(rotationCard, "固定间隔（分钟）", 9, false, Palette.Muted);
-        interval = MinutesOn(rotationCard, "固定间隔分钟数");
-        rangeLabel = AddLabel(rotationCard, "随机间隔（分钟）", 9, false, Palette.Muted);
-        randomMinimum = MinutesOn(rotationCard, "随机间隔最短分钟数");
-        maxLabel = AddLabel(rotationCard, "至", 9, false, Palette.Muted);
-        randomMaximum = MinutesOn(rotationCard, "随机间隔最长分钟数");
-
-        statusDot = AddPanel(this, Palette.Accent);
-        footer = AddLabel(this, "", 8.5f, false, Palette.Muted);
+        shell = PanelOn(this, Palette.Canvas, 16, true);
+        todayPage = Add(shell, new Panel { BackColor = Palette.Canvas });
+        libraryPage = Add(shell, new Panel { BackColor = Palette.Canvas });
+        rotationPage = Add(shell, new Panel { BackColor = Palette.Canvas, AutoScroll = true });
+        settingsPage = Add(shell, new Panel { BackColor = Palette.Canvas, AutoScroll = true });
+        MakeToday();
+        MakeLibrary();
+        MakeRotation();
+        MakeSettings();
+        footer = LabelOn(this, "", 11, false, Palette.Muted);
+        footer.Align = StringAlignment.Far;
         Resize += (_, __) => PlaceUi();
         PlaceUi();
-        ShowPage("explore");
+        ShowPage("today");
     }
+
+    private void MakeToday()
+    {
+        hero = Add(todayPage, new PhotoView { Radius = 21, Hero = true });
+        todayDate = ButtonOn(hero, "", "today", 16, ButtonLook.Glass, null);
+        todayState = ButtonOn(hero, "", null, 0, ButtonLook.Glass, null);
+        resolution = ButtonOn(hero, "", null, 0, ButtonLook.Glass, null);
+        foreach (var item in new[] { todayDate, todayState, resolution })
+        {
+            item.Cursor = Cursors.Default;
+            item.TabStop = false;
+            item.Radius = 16;
+        }
+        resolution.Font = Palette.Font(12, true, "JetBrains Mono");
+        fit = ButtonOn(hero, "Fill", "desktop", 16, ButtonLook.Glass, ShowFitChoices);
+        fit.EndGlyph = "down";
+        fit.EndGlyphSize = 15;
+        heroTitle = LabelOn(hero, "Getting today’s wallpaper…", 56, false, Palette.Text, "Instrument Serif");
+        heroCredit = LabelOn(hero, "", 12, false, Palette.Text, "JetBrains Mono");
+        about = ButtonOn(hero, "About this image", "external", 16, ButtonLook.Plain, OpenAbout);
+        favorite = ButtonOn(hero, "", "heart", 20, ButtonLook.Glass, async () => await ToggleTodayFavoriteAsync(), "Add to favorites");
+        more = ButtonOn(hero, "", "more", 20, ButtonLook.Glass, ShowTodayActions, "More actions");
+        apply = ButtonOn(hero, "Set as wallpaper", "desktop", 18, ButtonLook.Primary, async () => await ApplyAsync(selected));
+        favorite.Radius = more.Radius = apply.Radius = 14;
+        fileHint = LabelOn(hero, "", 11, false, Palette.Text, "JetBrains Mono");
+        fileHint.Align = StringAlignment.Far;
+
+        recentTitle = LabelOn(todayPage, "Last 8 days", 23, false, Palette.Text, "Instrument Serif");
+        marketName = LabelOn(todayPage, "Bing · United States", 12, false, Palette.Muted);
+        legendSaved = ButtonOn(todayPage, "Saved", "check", 14, ButtonLook.Plain, null);
+        legendDesktop = ButtonOn(todayPage, "On desktop", "desktop", 14, ButtonLook.Plain, null);
+        legendSaved.GlyphColor = Palette.Blue;
+        legendDesktop.GlyphColor = Palette.Amber;
+        foreach (var item in new[] { legendSaved, legendDesktop })
+        {
+            item.ForeColor = Palette.Muted;
+            item.Font = Palette.Font(12);
+            item.TabStop = false;
+            item.Cursor = Cursors.Default;
+        }
+        older = ButtonOn(todayPage, "Older ones are in Library", null, 0, ButtonLook.Plain, () => ShowPage("library"));
+        older.EndGlyph = "right";
+        older.Font = Palette.Font(13);
+        recentCards = Add(todayPage, new TableLayoutPanel { BackColor = Palette.Canvas, RowCount = 1 });
+        recentCards.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+    }
+
+    private void MakeLibrary()
+    {
+        libraryTitle = LabelOn(libraryPage, "Library", 42, false, Palette.Text, "Instrument Serif");
+        libraryStats = LabelOn(libraryPage, "", 13, false, Palette.Muted);
+        searchBox = PanelOn(libraryPage, Palette.Canvas, 10, true);
+        var glass = Add(searchBox, new PictureBox { Image = Palette.Icon("search", 18, Palette.Muted), SizeMode = PictureBoxSizeMode.CenterImage });
+        Put(glass, 10, 10, 22, 20);
+        search = InputOn(searchBox, "Search title or tag");
+        search.BorderWidth = 0;
+        search.TextChanged += (_, __) => RenderLibrary();
+        sort = ButtonOn(libraryPage, "Newest first", null, 0, ButtonLook.Outline, ShowSortChoices);
+        sort.EndGlyph = "down";
+        string[] filters = { "All", "Favorites", "In rotation", "Missing file" };
+        libraryFilters = filters.Select((value, index) => ButtonOn(libraryPage, value, index == 3 ? "warning" : null,
+            14, ButtonLook.Chip, () => { libraryFilter = index; RenderLibrary(); })).ToArray();
+        foreach (var item in libraryFilters)
+        {
+            item.Font = Palette.Font(13);
+            item.Radius = 15;
+        }
+
+        gallery = Add(libraryPage, new FlowLayoutPanel
+        {
+            AutoScroll = true, WrapContents = true, BackColor = Palette.Canvas, Margin = Padding.Empty
+        });
+        gallery.Scroll += (_, __) => QueueGalleryPreviews();
+        gallery.MouseWheel += (_, __) => BeginInvoke(new Action(QueueGalleryPreviews));
+        galleryEmpty = LabelOn(gallery, "", 14, false, Palette.Muted);
+
+        metadataBar = PanelOn(libraryPage, Palette.Surface, 12, true);
+        indexStatus = LabelOn(metadataBar, "", 13, true);
+        indexCount = LabelOn(metadataBar, "", 11, false, Palette.Muted, "JetBrains Mono");
+        metadata = ButtonOn(metadataBar, "Manage metadata", "json", 16, ButtonLook.Soft, OpenMetadata);
+
+        inspector = PanelOn(libraryPage, Palette.Surface, 17, true);
+        inspectorDetails = Add(inspector, new Panel { AutoScroll = true, BackColor = Palette.Surface });
+        libraryPreview = Add(inspectorDetails, new PhotoView());
+        editTitle = InputOn(inspectorDetails, "Title");
+        editTitle.Font = Palette.Font(29, false, "Instrument Serif");
+        editTitle.BackColor = Palette.Surface;
+        editTitle.BorderWidth = 0;
+        editTitle.LostFocus += (_, __) => CommitTitle();
+        editTitle.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Enter) { CommitTitle(); e.SuppressKeyPress = true; }
+        };
+        string[] labels = { "Date", "Size", "Credit", "Applied" };
+        metadataFields = labels.Select(label => LabelOn(inspectorDetails, label, 12, false, Palette.Muted)).ToArray();
+        detailDate = LabelOn(inspectorDetails, "", 13);
+        detailSize = LabelOn(inspectorDetails, "", 13);
+        detailCredit = LabelOn(inspectorDetails, "", 13);
+        detailApplied = LabelOn(inspectorDetails, "", 13);
+        detailFields = new[] { detailDate, detailSize, detailCredit, detailApplied };
+        nameLabel = LabelOn(inspectorDetails, "File", 12, false, Palette.Muted);
+        nameBox = PanelOn(inspectorDetails, Palette.Canvas, 10, true);
+        savedName = LabelOn(nameBox, "", 12, false, Palette.Text, "JetBrains Mono");
+        copyName = ButtonOn(nameBox, "", "copy", 16, ButtonLook.Plain, () => Copy(savedEntry?.FileName), "Copy file name");
+        tagsLabel = LabelOn(inspectorDetails, "Tags", 12, false, Palette.Muted);
+        tags = Add(inspectorDetails, new FlowLayoutPanel { WrapContents = true, BackColor = Palette.Surface });
+        favoriteLabel = LabelOn(inspectorDetails, "Favorite");
+        rotationLabel = LabelOn(inspectorDetails, "Include in auto-change");
+        savedFavorite = ToggleOn(inspectorDetails, "Favorite", value => ChangeEntry(entry => entry.With(favorite: value)));
+        savedRotation = ToggleOn(inspectorDetails, "Include in auto-change", value => ChangeEntry(entry => entry.With(rotation: value)));
+        applySaved = ButtonOn(inspector, "Set as wallpaper", "desktop", 18, ButtonLook.Primary,
+            async () => await ApplyAsync(savedEntry?.Wallpaper));
+        revealSaved = ButtonOn(inspector, "Reveal in folder", "folder", 18, ButtonLook.Soft,
+            () => { if (savedEntry != null) Reveal(library.PathOf(savedEntry)); });
+        removeSaved = ButtonOn(inspector, "", "trash", 18, ButtonLook.Soft, DeleteSelected, "Remove from library");
+        removeSaved.GlyphColor = Palette.Error;
+    }
+
+    private InkLabel[] metadataFields, detailFields;
+    private InkLabel savedName;
 
     private void PlaceUi()
     {
-        if (ClientSize.Width == 0 || ClientSize.Height == 0 || footer == null)
+        if (footer == null || ClientSize.Width < 200)
             return;
-
-        int railWidth = S(211);
-        int gutter = S(28);
-        int top = S(34);
-        int w = ClientSize.Width - railWidth - 2 * gutter;
-        int h = ClientSize.Height - top - S(37);
-        if (w < S(380) || h < S(410))
-            return;
-
-        chrome.SetBounds(railWidth, 0, ClientSize.Width - railWidth, S(34));
-        rail.SetBounds(0, 0, railWidth - 1, ClientSize.Height);
-        railEdge.SetBounds(railWidth - 1, 0, 1, ClientSize.Height);
-        logo.SetBounds(S(19), S(26), S(42), S(42));
-        product.SetBounds(S(69), S(25), railWidth - S(73), S(24));
-        productSub.SetBounds(S(70), S(49), railWidth - S(74), S(20));
-        navigation.SetBounds(S(14), S(105), railWidth - S(28), S(168));
-        scheduleCard.SetBounds(S(16), ClientSize.Height - S(137), railWidth - S(32), S(69));
-        scheduleTitle.SetBounds(S(13), S(11), scheduleCard.Width - S(24), S(22));
-        schedule.SetBounds(S(13), S(36), scheduleCard.Width - S(24), S(21));
-        toTray.SetBounds(S(16), ClientSize.Height - S(55), railWidth - S(32), S(39));
-        foreach (var view in new[] { explore, collection, preferences })
-            view.SetBounds(railWidth + gutter, top, w, h);
-        statusDot.SetBounds(railWidth + gutter + S(1), ClientSize.Height - S(22), S(5), S(5));
-        footer.SetBounds(railWidth + gutter + S(14), ClientSize.Height - S(33), w - S(14), S(27));
-
-        PlaceHeading(explorerTitle, explorerSub, refresh, w - S(149), S(104));
-        apply.SetBounds(w - S(140), S(13), S(143), S(44));
-        int heroHeight = h - S(239);
-        hero.SetBounds(0, S(92), w, heroHeight);
-
-
-        archiveCard.SetBounds(0, hero.Bottom + S(15), w, S(133));
-        recentTitle.SetBounds(0, 0, S(158), S(28));
-        recentCount.SetBounds(w - S(96), 0, S(96), S(28));
-        recentCards.SetBounds(0, S(34), w, S(97));
-
-        PlaceHeading(libraryTitle, librarySub, revealLibrary, w, S(126));
-        int gridWidth = (int)(w * .60f);
-        search.SetBounds(0, S(90), gridWidth, S(42));
-        savedGrid.SetBounds(0, S(145), gridWidth, h - S(145));
-        libraryEmpty.SetBounds(0, S(145), w, h - S(145));
-        emptyTitle.SetBounds(0, libraryEmpty.Height / 2 - S(32), w, S(30));
-        emptyHelp.SetBounds(S(8), libraryEmpty.Height / 2 + S(2), w - S(16), S(24));
-        int detailWidth = w - gridWidth - S(16);
-        savedCard.SetBounds(gridWidth + S(16), S(90), detailWidth, h - S(90));
-        int inner = detailWidth - S(32);
-        int imageHeight = Math.Min(Math.Min(S(232), inner * 9 / 16), h - S(330));
-        savedPhoto.SetBounds(S(16), S(16), inner, imageHeight);
-        int infoTop = savedPhoto.Bottom + S(9);
-        savedTitle.SetBounds(S(16), infoTop, inner, S(43));
-        savedSize.SetBounds(S(16), infoTop + S(49), S(114), S(29));
-        savedDetail.SetBounds(S(17), infoTop + S(88), inner - S(1), S(48));
-        int buttonTop = savedCard.Height - S(113);
-        applySaved.SetBounds(S(14), buttonTop, inner + S(4), S(46));
-        revealSaved.SetBounds(S(14), buttonTop + S(48), inner * 2 / 3, S(40));
-        removeSaved.SetBounds(revealSaved.Right + S(5), revealSaved.Top, inner - revealSaved.Width, S(40));
-
-        PlaceHeading(settingsTitle, settingsSub, saveSettings, w, S(126));
-        int settingWidth = (w - S(16)) / 2;
-        folderCard.SetBounds(0, S(92), settingWidth, S(193));
-        folderTitle.SetBounds(S(18), S(14), settingWidth - S(36), S(32));
-        folderHelp.SetBounds(S(18), S(50), settingWidth - S(36), S(29));
-        folderPath.SetBounds(S(15), S(89), settingWidth - S(30), S(43));
-        browse.SetBounds(settingWidth - S(103), S(137), S(89), S(40));
-        proxyCard.SetBounds(settingWidth + S(16), S(92), w - settingWidth - S(16), S(193));
-        proxyTitle.SetBounds(S(18), S(14), proxyCard.Width - S(36), S(32));
-        proxyHelp.SetBounds(S(18), S(50), proxyCard.Width - S(36), S(29));
-        proxyMode.SetBounds(S(15), S(89), proxyCard.Width - S(30), S(43));
-        proxyAddress.SetBounds(S(15), S(135), proxyCard.Width - S(30), S(43));
-        rotationCard.SetBounds(0, S(301), w, S(221));
-        rotationTitle.SetBounds(S(18), S(13), w - S(36), S(32));
-        rotationHelp.SetBounds(S(18), S(48), w - S(36), S(29));
-        rotationMode.SetBounds(S(17), S(82), Math.Min(w - S(34), S(426)), S(42));
-        intervalLabel.SetBounds(S(19), S(149), S(134), S(31));
-        interval.SetBounds(S(155), S(143), S(101), S(43));
-        rangeLabel.Bounds = intervalLabel.Bounds;
-        randomMinimum.Bounds = interval.Bounds;
-        maxLabel.SetBounds(S(262), S(149), S(21), S(31));
-        randomMaximum.SetBounds(S(285), S(143), S(101), S(43));
+        int width = Logic(ClientSize.Width), height = Logic(ClientSize.Height);
+        Put(chrome, 0, 0, width, 40);
+        Put(brandIcon, 16, 10, 20, 20);
+        Put(brandName, 46, 0, 110, 40);
+        for (int i = 0; i < 3; i++)
+            Put(windowButtons[i], width - 138 + i * 46, 1, 46, 39);
+        for (int i = 0; i < navigation.Length; i++)
+            Put(navigation[i], 12, 48 + i * 44, 176, 40);
+        Put(nowCard, 12, height - 223, 176, 211);
+        Put(desktopPreview, 11, 11, 154, 87);
+        Put(nowCaption, 11, 106, 154, 18);
+        Put(nowTitle, 11, 123, 154, 20);
+        Put(nowNext, 11, 143, 154, 18);
+        Put(previous, 11, 168, 32, 32);
+        Put(pause, 72, 168, 32, 32);
+        Put(next, 133, 168, 32, 32);
+        Put(shell, 200, 40, width - 208, height - 48);
+        int w = Logic(shell.Width), h = Logic(shell.Height);
+        foreach (var view in new[] { todayPage, libraryPage, rotationPage, settingsPage })
+            Put(view, 1, 1, w - 2, h - 2);
+        Put(footer, 225, height - 29, width - 257, 20);
+        footer.BringToFront();
+        PlaceToday(w - 2, h - 2);
+        PlaceLibrary(w - 2, h - 2);
+        PlaceRotation(w - 2, h - 2);
+        PlaceSettings(w - 2, h - 2);
     }
 
-    private void PlaceHeading(Label title, Label subtitle, UI.Button action, int width, int buttonWidth)
+    private void PlaceToday(int w, int h)
     {
-        title.SetBounds(0, 0, width - buttonWidth - S(10), S(53));
-        subtitle.SetBounds(S(2), S(57), width - buttonWidth - S(12), S(24));
-        action.SetBounds(width - buttonWidth + S(3), S(13), buttonWidth, S(44));
+        int x = 24, width = w - 48;
+        int height = Math.Max(250, Math.Min(width * 9 / 16, h - 190));
+        Put(hero, x, 24, width, height);
+        Put(todayDate, 20, 20, 178, 32);
+        Put(todayState, 206, 20, settings?.CurrentId != null && settings.CurrentId == selected?.Id ? 148 : 112, 32);
+        Put(resolution, width - 225, 20, 104, 32);
+        Put(fit, width - 112, 20, 92, 32);
+        Put(heroTitle, 32, height - 137, width - 379, 73);
+        int creditWidth = Math.Max(0, Math.Min(heroCredit.Text.Length * 7 + 7, Math.Min(265, width - 550)));
+        Put(heroCredit, 32, height - 57, creditWidth, 26);
+        Put(about, 41 + creditWidth, height - 59, 164, 30);
+        Put(favorite, width - 342, height - 102, 48, 48);
+        Put(more, width - 284, height - 102, 48, 48);
+        Put(apply, width - 226, height - 102, 194, 48);
+        Put(fileHint, width - 394, height - 48, 362, 24);
+        int stripTop = 24 + height + 17;
+        Put(recentTitle, x, stripTop, 104, 37);
+        Put(marketName, x + 101, stripTop + 3, 175, 34);
+        Put(legendSaved, w - 413, stripTop + 4, 76, 30);
+        Put(legendDesktop, w - 337, stripTop + 4, 105, 30);
+        Put(older, w - 232, stripTop + 4, 208, 30);
+        Put(recentCards, x - 3, stripTop + 43, width + 6, 96);
     }
 
-    private static Panel AddPanel(Control parent, Color color)
+    private void PlaceLibrary(int w, int h)
     {
-        var panel = new Panel { BackColor = color };
-        parent.Controls.Add(panel);
-        return panel;
-    }
-
-    private static UI.Panel CardOn(Control parent)
-    {
-        var card = new UI.Panel { Back = Palette.Surface, Radius = 13, BorderWidth = 1, BorderColor = Palette.Line };
-        parent.Controls.Add(card);
-        return card;
-    }
-
-    private static Label AddLabel(Control parent, string text, float size, bool bold, Color? color = null)
-    {
-        var label = new Label
+        int side = Math.Max(252, Math.Min(320, (int)(w * .30)));
+        int start = w - side - 24;
+        int body = start - 48;
+        Put(libraryTitle, 24, 20, Math.Max(146, body - 370), 49);
+        Put(libraryStats, 24, 68, body - 355, 24);
+        int sortWidth = Math.Min(150, body / 4);
+        int searchWidth = Math.Min(210, body / 3);
+        Put(sort, start - 24 - sortWidth, 50, sortWidth, 40);
+        Put(searchBox, Logic(sort.Left) - searchWidth - 8, 50, searchWidth, 40);
+        Put(search, 35, 3, searchWidth - 39, 34);
+        int filterX = 24;
+        int[] filterWidths = { 71, 104, 116, 139 };
+        for (int i = 0; i < libraryFilters.Length; i++)
         {
-            Text = text, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft,
-            Font = Palette.Font(size, bold ? FontStyle.Bold : FontStyle.Regular),
-            ForeColor = color ?? Palette.Ink, BackColor = Color.Transparent, UseMnemonic = false
-        };
-        parent.Controls.Add(label);
-        return label;
+            Put(libraryFilters[i], filterX, 104, filterWidths[i], 30);
+            filterX += filterWidths[i] + 7;
+        }
+        Put(gallery, 24, 147, body, h - 226);
+        Put(metadataBar, 24, h - 73, body, 48);
+        Put(indexStatus, 16, 10, Math.Max(112, body / 4), 28);
+        Put(indexCount, Math.Max(145, body / 4 + 15), 10, Math.Max(20, body - 332), 28);
+        Put(metadata, body - 169, 8, 159, 32);
+        Put(inspector, start, 24, side, h - 48);
+        int actionWidth = side - 34, panelHeight = h - 48;
+        int detailsHeight = panelHeight - 126;
+        int inner = detailsHeight < 540 ? actionWidth - 16 : actionWidth;
+        int photoHeight = Math.Min(inner * 9 / 16, Math.Max(78, detailsHeight - 405));
+        Put(inspectorDetails, 1, 12, side - 2, detailsHeight);
+        int scrollY = Logic(inspectorDetails.AutoScrollPosition.Y);
+        Put(libraryPreview, 15, scrollY + 5, inner, photoHeight);
+        int y = scrollY + 5 + photoHeight + 9;
+        Put(editTitle, 14, y, inner + 4, 40);
+        for (int i = 0; i < 4; i++)
+        {
+            Put(metadataFields[i], 16, y + 47 + i * 27, 87, 22);
+            Put(detailFields[i], 106, y + 47 + i * 27, inner - 90, 22);
+        }
+        Put(nameLabel, 16, y + 165, inner, 22);
+        Put(nameBox, 16, y + 189, inner, 46);
+        Put(savedName, 12, 3, inner - 51, 40);
+        Put(copyName, inner - 40, 8, 32, 30);
+        Put(tagsLabel, 16, y + 241, inner, 20);
+        Put(tags, 16, y + 266, inner, 39);
+        Put(favoriteLabel, 16, y + 312, inner - 45, 27);
+        Put(savedFavorite, inner - 25, y + 313, 40, 24);
+        Put(rotationLabel, 16, y + 351, inner - 45, 28);
+        Put(savedRotation, inner - 25, y + 352, 40, 24);
+        inspectorDetails.AutoScrollMinSize = new Size(0, S(y - scrollY + 383));
+        Put(applySaved, 16, panelHeight - 105, actionWidth, 40);
+        Put(revealSaved, 16, panelHeight - 57, actionWidth - 48, 40);
+        Put(removeSaved, side - 57, panelHeight - 57, 40, 40);
+        SizeGallery();
     }
 
-    private static UI.Button ButtonOn(Control parent, string text, string icon, EventHandler click, bool primary = false)
+    internal static T Add<T>(Control parent, T child) where T : Control
     {
-        var button = new UI.Button
-        {
-            Text = text, AccessibleName = text, IconSvg = icon, IconRatio = .84f,
-            Radius = 9, WaveSize = 4, Cursor = Cursors.Hand, BorderWidth = primary ? 0 : 1,
-            Type = primary ? UI.TTypeMini.Primary : UI.TTypeMini.Default,
-            BackColor = primary ? Palette.Accent : null, DefaultBack = Palette.Surface, DefaultBorderColor = Palette.Line,
-            BackHover = primary ? Palette.AccentHover : Palette.Hover,
-            ForeColor = primary ? Palette.OnAccent : Palette.Ink
-        };
-        button.Click += click;
-        parent.Controls.Add(button);
-        return button;
+        parent.Controls.Add(child);
+        return child;
     }
 
-    private static UI.Input InputOn(Control parent, string name, string placeholder, string icon)
+    internal static FramePanel PanelOn(Control parent, Color fill, int radius, bool border = false) =>
+        Add(parent, new FramePanel(fill, radius, border ? Palette.Line : (Color?)null));
+
+    internal static InkLabel LabelOn(Control parent, string text, int size = 14, bool bold = false,
+        Color? color = null, string face = "Inter") =>
+        Add(parent, new InkLabel { Text = text, Font = Palette.Font(size, bold, face), ForeColor = color ?? Palette.Text });
+
+    internal static FrameButton ButtonOn(Control parent, string text, string glyph, int glyphSize,
+        ButtonLook look, Action action, string description = null)
     {
-        var input = new UI.Input
+        var control = Add(parent, new FrameButton
         {
-            AccessibleName = name, PlaceholderText = placeholder, PrefixSvg = icon, Radius = 8,
-            BackColor = Palette.Field, BorderColor = Palette.Line, ForeColor = Palette.Ink
-        };
-        parent.Controls.Add(input);
-        return input;
+            Text = text, Glyph = glyph, GlyphSize = glyphSize, Look = look, AccessibleName = description ?? text,
+            Font = Palette.Font(14, look == ButtonLook.Primary || look == ButtonLook.Soft)
+        });
+        if (action != null)
+            control.Click += (_, __) => action();
+        return control;
     }
 
-    private static UI.InputNumber MinutesOn(Control parent, string name)
-    {
-        var input = new UI.InputNumber
+    internal static UI.Input InputOn(Control parent, string name) =>
+        Add(parent, new UI.Input
         {
-            Minimum = 1, Maximum = 10080, AccessibleName = name, ShowControl = true, Radius = 8,
-            BackColor = Palette.Field, BorderColor = Palette.Line, ForeColor = Palette.Ink
-        };
-        parent.Controls.Add(input);
-        return input;
+            AccessibleName = name, PlaceholderText = name, ForeColor = Palette.Text, BackColor = Palette.Canvas,
+            BorderColor = Palette.Line, Radius = 10, Font = Palette.Font()
+        });
+
+    private static ToggleControl ToggleOn(Control parent, string label, Action<bool> action)
+    {
+        var control = Add(parent, new ToggleControl { AccessibleName = label });
+        control.CheckedChanged += (_, __) => action(control.Checked);
+        return control;
     }
 }

@@ -7,13 +7,14 @@ using System.Net;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace BingWallpapers;
 
 internal static class Program
 {
     [STAThread]
-    private static void Main()
+    private static void Main(string[] args)
     {
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
@@ -23,7 +24,8 @@ internal static class Program
         {
             if (!created)
             {
-                signal.Set();
+                if (Array.IndexOf(args, "--tray") < 0)
+                    signal.Set();
                 return;
             }
 
@@ -31,7 +33,7 @@ internal static class Program
             if (Environment.OSVersion.Version <= new Version(6, 1, 7601))
                 ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
 
-            using (var form = new MainForm())
+            using (var form = new MainForm(Array.IndexOf(args, "--tray") >= 0))
             {
                 var handle = form.Handle;
                 var registered = ThreadPool.RegisterWaitForSingleObject(signal, (_, expired) =>
@@ -65,7 +67,7 @@ internal static class DesktopWallpaper
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SystemParametersInfo(uint action, uint parameter, string path, uint flags);
 
-    public static void Apply(string jpegPath)
+    public static void Apply(string jpegPath, string fit)
     {
         string path = jpegPath;
         if (Environment.OSVersion.Version.Major == 6 && Environment.OSVersion.Version.Minor == 1)
@@ -76,7 +78,55 @@ internal static class DesktopWallpaper
                 image.Save(path, ImageFormat.Bmp);
         }
 
-        if (!SystemParametersInfo(SetDesktopWallpaper, 0, path, UpdateUserProfile | BroadcastChange))
-            throw new Win32Exception(Marshal.GetLastWin32Error(), "Windows 无法设置桌面壁纸。");
+        using (var desktop = Registry.CurrentUser.OpenSubKey(@"Control Panel\Desktop", true))
+        {
+            string style = fit == "Fit" ? "6" : fit == "Stretch" ? "2" : fit == "Center" || fit == "Tile" ? "0" : "10";
+            var previousStyle = desktop.GetValue("WallpaperStyle");
+            var previousTile = desktop.GetValue("TileWallpaper");
+            try
+            {
+                desktop.SetValue("WallpaperStyle", style);
+                desktop.SetValue("TileWallpaper", fit == "Tile" ? "1" : "0");
+                if (!SystemParametersInfo(SetDesktopWallpaper, 0, path, UpdateUserProfile | BroadcastChange))
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Windows could not apply this wallpaper.");
+            }
+            catch
+            {
+                Restore(desktop, "WallpaperStyle", previousStyle);
+                Restore(desktop, "TileWallpaper", previousTile);
+                throw;
+            }
+        }
+    }
+
+    private static void Restore(RegistryKey key, string name, object value)
+    {
+        if (value == null)
+            key.DeleteValue(name, false);
+        else
+            key.SetValue(name, value);
+    }
+}
+
+internal static class StartWithWindows
+{
+    private const string Run = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string Name = "Dayframe";
+
+    public static bool Enabled()
+    {
+        using (var key = Registry.CurrentUser.OpenSubKey(Run))
+            return key?.GetValue(Name) is string;
+    }
+
+    public static void Set(bool enabled)
+    {
+        using (var key = Registry.CurrentUser.CreateSubKey(Run))
+        {
+            if (enabled)
+                key.SetValue(Name, $"\"{Application.ExecutablePath}\" --tray");
+            else
+                key.DeleteValue(Name, false);
+        }
     }
 }
