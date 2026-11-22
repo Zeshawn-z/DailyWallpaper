@@ -1,10 +1,10 @@
-# Dayframe · Bing Wallpapers
+# DailyWallpaper · Dayframe
 
-Dayframe 是根据提供的 Dayframe 界面稿实现的 Windows Bing 壁纸管理器。应用使用 WinForms，目标运行环境为 Windows 7 SP1、Windows 10 和 Windows 11，以及 .NET Framework 4.7.2 或更新版本。
+DailyWallpaper 是一款使用 Bing 每日图片的 Windows 壁纸管理器。应用显示名为「每日壁纸」或 Dayframe，使用 WinForms，目标运行环境为 Windows 7 SP1、Windows 10 和 Windows 11，以及 .NET Framework 4.7.2 或更新版本。
 
 ## 运行
 
-双击 `BingWallpapers.exe` 即可运行。程序文件已内嵌 AntdUI 和所用字体。如果旧版 Bing Wallpapers 正在托盘运行，请先从托盘退出旧版。Windows 7 SP1 访问 Bing 需要可用的 TLS 1.2 和证书信任链。
+从 [GitHub Releases](https://github.com/Zeshawn-z/DailyWallpaper/releases/latest) 下载单文件 EXE，双击即可运行。程序已内嵌 AntdUI 和所用字体。如果旧版正在托盘运行，请先从托盘退出旧版。Windows 7 SP1 访问 Bing 需要可用的 TLS 1.2 和证书信任链。
 
 ## 页面
 
@@ -19,10 +19,31 @@ Dayframe 是根据提供的 Dayframe 界面稿实现的 Windows Bing 壁纸管�
 
 ## 构建
 
-使用带有 .NET Framework 4.7.2 Developer Pack 的 Visual Studio、Build Tools 或 .NET SDK。
+在 Windows 上安装 .NET SDK 和 .NET Framework 4.7.2 Developer Pack。构建会从 NuGet 还原 AntdUI。
 
 ```powershell
 dotnet build .\BingWallpapers.csproj -c Release
 ```
 
 单文件输出为 `bin\Release\net472\BingWallpapers.exe`。随程序分发的许可证已内嵌在 EXE 中，源文件位于 `Licenses`。
+
+## 源码结构
+
+| 文件 | 职责 |
+| --- | --- |
+| `Program.cs` | 程序入口、单实例、加载内嵌依赖、Windows 壁纸 API 和开机启动。 |
+| `MainForm.cs` | 主窗口状态、导航、托盘、Bing 刷新、应用壁纸和定时器。 |
+| `MainForm.Layout.cs` | 窗口布局、首页预览、画廊和控件定位。 |
+| `MainForm.Library.cs`、`MetadataDialog.cs` | 壁纸库筛选和编辑、元数据窗口及索引管理。 |
+| `MainForm.Rotation.cs`、`RotationPlan.cs` | 自动换图设置、下一张预览、时间安排和图片挑选规则。 |
+| `MainForm.Settings.cs`、`Strings.cs` | 程序设置、外观切换、中英文界面和日期格式。 |
+| `BingClient.cs`、`BingTitles.cs` | Bing 图片与元数据请求、代理、预览缓存和跨市场标题匹配。 |
+| `Storage.cs` | 配置、壁纸数据和 JSON 索引读写、迁移及备份。 |
+| `LibraryGallery.cs`、`LibraryThumbnails.cs` | 虚拟滚动、可见区绘制以及缩略图的后台生成和缓存。 |
+| `Visuals.cs`、`DesignIcons.cs` | 主题、字体、通用控件、图片绘制和界面图标。 |
+| `ThemedScrollBar.cs`、`ThemedScrollPanel.cs` | 主题化滚动条和滚动容器。 |
+| `BingWallpapers.csproj`、`app.manifest`、`Assets/` | 构建设置、Windows 兼容性与 DPI 声明、图标和字体资源。 |
+
+## 自动发布
+
+每次推送到 `main`，[GitHub Actions](.github/workflows/release.yml) 都在 Windows 上构建 Release 配置并发布单文件 EXE。首版为 `v1.0.0`。以后按现有版本标签递增补丁号，例如 `v1.0.1`，并将版本写入 EXE。
